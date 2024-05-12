@@ -292,45 +292,45 @@ class HouseholdModelClass(EconModelClass):
         
         # loop through state variable: wealth
         for iA in range(par.num_A): # add human capital state variable!
-            for iK1, K1 in enumerate(par.k_grid):
-                for iK2, K2 in enumerate(par.k_grid):
-                    # index
-                    idx = (t,iA, iK1, iK2)
+            for iK, K in enumerate(par.k_grid):
+                
+                # index
+                idx = (t,iA, iK)
 
-                    # resources
-                    Aw = par.grid_Aw[iA]
-                    Am = par.grid_Am[iA]
+                # resources
+                Aw = par.grid_Aw[iA]
+                Am = par.grid_Am[iA]
+                
+                Mw = resources_single(self,K, hours,Aw,1,par) # how to treat working hours?
+                Mm = resources_single(self,K, hours,Am,2,par) # 
 
-                    Mw = resources_single(self,K1, K2, hours,A,1,par) # how to treat working hours??
-                    Mm = resources_single(Am,2,par) 
 
-
-                    if t == (par.T-1): # terminal period
-                        
-                        # intra-period allocation: consume all resources
-                        sol.Cw_priv_single[idx],sol.Cw_pub_single[idx] = intraperiod_allocation_single(Mw,woman,par)
-                        sol.Vw_single[idx] = usr.util(sol.Cw_priv_single[idx],sol.Cw_pub_single[idx],woman,par)
-                        
-                        sol.Cm_priv_single[idx],sol.Cm_pub_single[idx] = intraperiod_allocation_single(Mm,man,par)
-                        sol.Vm_single[idx] = usr.util(sol.Cm_priv_single[idx],sol.Cm_pub_single[idx],man,par)
+                if t == (par.T-1): # terminal period
                     
-                    else: # earlier periods
+                    # intra-period allocation: consume all resources
+                    sol.Cw_priv_single[idx],sol.Cw_pub_single[idx] = intraperiod_allocation_single(Mw,woman,par)
+                    sol.Vw_single[idx] = usr.util(sol.Cw_priv_single[idx],sol.Cw_pub_single[idx],woman,par)
+                    
+                    sol.Cm_priv_single[idx],sol.Cm_pub_single[idx] = intraperiod_allocation_single(Mm,man,par)
+                    sol.Vm_single[idx] = usr.util(sol.Cm_priv_single[idx],sol.Cm_pub_single[idx],man,par)
+                
+                else: # earlier periods
 
-                        # search over optimal total consumption, C
-                        obj_w = lambda C_tot: - self.value_of_choice_single(C_tot[0],Mw,woman,sol.Vw_single[t+1])
-                        obj_m = lambda C_tot: - self.value_of_choice_single(C_tot[0],Mm,man,sol.Vm_single[t+1])
-                        
-                        res_w = optimize.minimize(obj_w,Mw/2.0,bounds=((1.0e-8,Mw),))
-                        res_m = optimize.minimize(obj_m,Mm/2.0,bounds=((1.0e-8,Mm),))
-                        
-                        # store results
-                        Cw = res_w.x
-                        sol.Cw_priv_single[idx],sol.Cw_pub_single[idx] = intraperiod_allocation_single(Cw,woman,par)
-                        sol.Vw_single[idx] = -res_w.fun
-                        
-                        Cm = res_m.x
-                        sol.Cm_priv_single[idx],sol.Cm_pub_single[idx] = intraperiod_allocation_single(Cm,man,par)
-                        sol.Vm_single[idx] = -res_m.fun                
+                    # search over optimal total consumption, C
+                    obj_w = lambda C_tot: - self.value_of_choice_single(C_tot[0],Mw,woman,sol.Vw_single[t+1])
+                    obj_m = lambda C_tot: - self.value_of_choice_single(C_tot[0],Mm,man,sol.Vm_single[t+1])
+                    
+                    res_w = optimize.minimize(obj_w,Mw/2.0,bounds=((1.0e-8,Mw),))
+                    res_m = optimize.minimize(obj_m,Mm/2.0,bounds=((1.0e-8,Mm),))
+                    
+                    # store results
+                    Cw = res_w.x
+                    sol.Cw_priv_single[idx],sol.Cw_pub_single[idx] = intraperiod_allocation_single(Cw,woman,par)
+                    sol.Vw_single[idx] = -res_w.fun
+                    
+                    Cm = res_m.x
+                    sol.Cm_priv_single[idx],sol.Cm_pub_single[idx] = intraperiod_allocation_single(Cm,man,par)
+                    sol.Vm_single[idx] = -res_m.fun                
                         
     def solve_couple(self,t):
         par = self.par
@@ -807,9 +807,9 @@ def resources_couple(self,par,A, capital1, capital2, hours1, hours2):
     par = par.self
     return par.R*A + wage_func(self,capital1,sex = 1)*hours1 + wage_func(self, capital2, sex = 2)*hours2
 
-def resources_single(self,capital1, capital2, hours,A, gender,par):
-    income = wage_func(self, capital1, sex = 1)*hours
+def resources_single(self,capital, hours, A, gender,par):
+    income = wage_func(self, capital, sex = 1)*hours
     if gender == man:
-        income = wage_func(self, capital2, sex = 2)*hours
+        income = wage_func(self, capital, sex = 2)*hours
 
     return par.R*A + income

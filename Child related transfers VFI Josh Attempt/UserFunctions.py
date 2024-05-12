@@ -37,3 +37,11 @@ def cons_priv_single(C_tot,gender,par):
         alpha2 = par.alpha2_m   
     
     return C_tot/(1.0 + (alpha2/alpha1)**(1.0/(1.0-phi)) )
+
+
+def resources_single(A,gender,par):
+    income = par.inc_w
+    if gender == man:
+        income = par.inc_m
+
+    return par.R*A + income
