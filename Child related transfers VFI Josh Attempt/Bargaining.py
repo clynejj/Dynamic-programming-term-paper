@@ -306,8 +306,17 @@ class HouseholdModelClass(EconModelClass):
 
 
                 if t == (par.T-1): # terminal period
-                    
-                    # intra-period allocation: consume all resources
+                    #create loop for both genders...
+                    #new: intra-period allocation: consume all resources
+                    obj = lambda x: self.obj_last_single(x[0],Aw,K,gender,par)
+
+                     # call optimizer
+                    hours_min = np.fmax( - assets / self.wage_func(capital,t) + 1.0e-5 , 0.0) # minimum amount of hours that ensures positive consumption
+                    init_h = np.maximum(hours_min,2.0) if i_a==0 else np.array([sol.h[t,i_n,i_a-1,i_k]])
+                    res = minimize(obj,init_h,bounds=((hours_min,np.inf),),method='L-BFGS-B')
+
+
+                    #Store results
                     sol.Cw_priv_single[idx],sol.Cw_pub_single[idx] = intraperiod_allocation_single(Mw,woman,par)
                     sol.Vw_single[idx] = usr.util(sol.Cw_priv_single[idx],sol.Cw_pub_single[idx],woman,par)
                     
@@ -776,13 +785,13 @@ def update_bargaining_index(Sw,Sm,iP, par):
         else: # no-one wants to leave
             return iP
 
-def wage_func(self,capital,sex):
+def wage_func(self,capital,gender):
     # before tax wage rate
     par = self.par
 
     constant = par.wage_const_1
     return_K = par.wage_K_1
-    if sex>1:
+    if gender>1:
         constant = par.wage_const_2
         return_K = par.wage_K_2
 
@@ -813,3 +822,22 @@ def resources_single(self,capital, hours, A, gender,par):
         income = wage_func(self, capital, sex = 2)*hours
 
     return par.R*A + income
+
+def obj_last_single(self,hours,assets,capital,gender,par): #remember to add kids!
+    par = self.par
+    conspriv = self.cons_last_single(hours,assets,capital)[0]
+    conspub = self.cons_last_single(hours,assets,capital)[1]
+    
+    return - usr.util(conspriv,conspub, hours, gender, par)
+
+def cons_last_single(self,hours,assets,capital, gender):
+    #This returns C_priv, C_pub for singles in the last period
+    par = self.par
+    income = self.wage_func(self,capital,gender)*hours
+    #Consume everything in the last period
+    C_tot = assets + income
+    conspriv = usr.cons_priv_single(C_tot, gender, par)
+    conspub = C_tot - conspriv
+
+    return conspriv, conspub
+    
