@@ -3,8 +3,9 @@ import scipy.optimize as optimize
 
 from EconModel import EconModelClass
 from consav.grids import nonlinspace
-from consav import linear_interp, linear_interp_1d
+from consav import linear_interp, linear_interp_1d, linear_interp_2d, linear_interp_3d   
 from consav import quadrature
+from scipy.optimize import minimize,  NonlinearConstraint
 
 # user-specified functions
 import UserFunctions as usr
@@ -286,7 +287,51 @@ class HouseholdModelClass(EconModelClass):
         sol.Cw_tot_trans_single = sol.Cw_tot_single.copy()
         sol.Cm_tot_trans_single = sol.Cm_tot_single.copy()
 
-    def solve_single(self,t):
+    def solve_single(self, t):
+        par = self.par
+        sol = self.sol
+        
+        # loop through state variable: wealth
+        for iA in range(par.num_A):  # add human capital state variable!
+            for iK, K in enumerate(par.k_grid):
+                
+                # index
+                idx = (t, iA, iK)
+
+                
+                
+                
+                M = {}  # Dictionary to hold resources for each gender
+                for gender in ['woman', 'man']:
+                    #Resources
+                    Aw = par.grid_Aw[iA] if gender == 'woman' else par.grid_Am[iA]
+                    Am = par.grid_Am[iA] if gender == 'woman' else par.grid_Aw[iA]
+                    #M[gender] = resources_single(self, K, hours, Aw if gender == 'woman' else Am, 1 if gender == 'woman' else 2, par)
+
+                    if t == (par.T - 1):  # terminal period
+                        obj = lambda x: self.obj_last_single(x[0], Aw, K, gender, par)
+
+                        # call optimizer
+                        hours_min = np.fmax(-Aw / self.wage_func(K, t) + 1.0e-5, 0.0)  # minimum amount of hours that ensures positive consumption, check this!!!
+                        init_h = np.maximum(hours_min, 2.0) if i_A == 0 else np.array([sol.h_single[t, i_n, i_A - 1, i_K]]) # come back to check sol.h_single
+                        res = minimize(obj, init_h, bounds=((hours_min, np.inf),), method='L-BFGS-B')
+
+                        # Store results
+                        sol.C_priv_single[idx], sol.C_pub_single[idx] = intraperiod_allocation_single(M[gender], gender, par)
+                        sol.V_single[idx] = usr.util(sol.C_priv_single[idx], sol.C_pub_single[idx], gender, par)
+                    
+                    else:  # earlier periods
+                        # search over optimal total consumption, C
+                        obj = lambda C_tot: -self.value_of_choice_single(C_tot[0], M[gender], gender, sol.V_single[t + 1])
+                        res = optimize.minimize(obj, M[gender] / 2.0, bounds=((1.0e-8, M[gender]),))
+
+                        # store results
+                        C = res.x
+                        sol.C_priv_single[idx], sol.C_pub_single[idx] = intraperiod_allocation_single(C, gender, par)
+                        sol.V_single[idx] = -res.fun
+
+    
+    def solve_single_old(self,t):
         par = self.par
         sol = self.sol
         
