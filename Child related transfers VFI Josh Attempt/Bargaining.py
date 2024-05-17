@@ -122,7 +122,7 @@ class HouseholdModelClass(EconModelClass):
         self.setup_grids()
         
         # singles
-        shape_single = (par.T,par.num_A, par.num_k, par.num_k, par.num_n)
+        shape_single = (par.T, par.num_n, par.num_A, par.num_k)
         sol.Vw_single = np.nan + np.ones(shape_single)
         sol.Vm_single = np.nan + np.ones(shape_single)
         sol.Cw_priv_single = np.nan + np.ones(shape_single)
@@ -319,7 +319,84 @@ class HouseholdModelClass(EconModelClass):
                             obj = lambda x: self.obj_last_single(x[0], A, K, gender, kids)
 
                             # call optimizer
-                            hours_min = np.fmax(-A / self.wage_func(K, t, gender) + 1.0e-5, 0.0)  # minimum amount of hours that ensures positive consumption, check this!!!
+                            hours_min = np.fmax(-A / self.wage_func(K,gender) + 1.0e-5, 0.0)  # minimum amount of hours that ensures positive consumption
+                            if iA == 0:
+                                init_h = np.maximum(hours_min, 2.0)
+                            else:
+                                if gender == 'woman':
+                                    init_h = np.array([sol.Hw_single[t, iN, iA - 1, iK]])
+                                else:
+                                    init_h = np.array([sol.Hm_single[t, iN, iA - 1, iK]])
+                            
+                            res = minimize(obj, init_h, bounds=((hours_min, np.inf),), method='L-BFGS-B')
+
+                            # Store results separately for each gender
+                            if gender == 'woman':
+                                sol.Cw_priv_single[idx], sol.Cw_pub_single[idx] = self.cons_last_single(res.x[0], A, K, gender)
+                                sol.Hw_single[idx] = res.x[0]
+                                sol.Vw_single[idx] = -res.fun
+                            else:
+                                sol.Cm_priv_single[idx], sol.Cm_pub_single[idx] = self.cons_last_single(res.x[0], A, K, gender)
+                                sol.Hm_single[idx] = res.x[0]
+                                sol.Vm_single[idx] = -res.fun
+                            
+                        else:  # earlier periods
+                            # search over optimal total consumption, C
+                            obj = lambda x: -self.value_of_choice_single(x[0], x[1], A, K, kids, gender, t)
+                            
+                            # bounds on consumption 
+                            lb_c = 0.000001  # avoid dividing with zero
+                            ub_c = np.inf
+
+                            # bounds on hours
+                            lb_h = 0.0
+                            ub_h = np.inf 
+
+                            bounds = ((lb_c, ub_c), (lb_h, ub_h))
+                
+                            # call optimizer
+                            idx_last = (t + 1, iN, iA, iK)
+                            if gender == 'woman':
+                                init = np.array([sol.Cw_priv_single[idx_last], sol.Hw_single[idx_last]])
+                            else:
+                                init = np.array([sol.Cm_priv_single[idx_last], sol.Hm_single[idx_last]])
+                            
+                            res = minimize(obj, init, bounds=bounds, method='L-BFGS-B', tol=1.0e-8) 
+
+                            # Store results separately for each gender
+                            if gender == 'woman':
+                                sol.Cw_priv_single[idx], sol.Cw_pub_single[idx] = self.cons_single(res.x[0], A, K, gender, kids, t)
+                                sol.Hw_single[idx] = res.x[1]
+                                sol.Vw_single[idx] = -res.fun
+                            else:
+                                sol.Cm_priv_single[idx], sol.Cm_pub_single[idx] = self.cons_single(res.x[0], A, K, gender, kids, t)
+                                sol.Hm_single[idx] = res.x[1]
+                                sol.Vm_single[idx] = -res.fun
+
+    
+    def solve_3_14_single(self, t):
+        par = self.par
+        sol = self.sol
+        
+        # loop through state variable: wealth
+        for iN in range(par.num_n):  # addition of children
+            for iA in range(par.num_A):  
+                for iK in range(par.num_k):  # addition of human capital
+                    
+                    # index
+                    idx = (t, iN, iA, iK)
+
+                    for gender in ['woman', 'man']:
+                        # Resources
+                        A = par.grid_Aw[iA] if gender == 'woman' else par.grid_Am[iA]
+                        kids = par.nw_grid[iN] if gender == 'woman' else par.nm_grid[iN]
+                        K = par.kw_grid[iK] if gender == 'woman' else par.km_grid[iK]
+
+                        if t == (par.T - 1):  # terminal period
+                            obj = lambda x: self.obj_last_single(x[0], A, K, gender, kids)
+
+                            # call optimizer
+                            hours_min = np.fmax(-A / self.wage_func(K, gender) + 1.0e-5, 0.0)  # minimum amount of hours that ensures positive consumption, check this!!!
                             if iA == 0:
                                 init_h = np.maximum(hours_min, 2.0)
                             else:
@@ -399,7 +476,7 @@ class HouseholdModelClass(EconModelClass):
                             obj = lambda x: self.obj_last_single(x[0], A, K, gender, kids)
 
                             # call optimizer
-                            hours_min = np.fmax(-A / self.wage_func(K, t, gender) + 1.0e-5, 0.0)  # minimum amount of hours that ensures positive consumption, check this!!!
+                            hours_min = np.fmax(-A / self.wage_func(K,gender) + 1.0e-5, 0.0)  # minimum amount of hours that ensures positive consumption, check this!!!
                             init_h = np.maximum(hours_min, 2.0) if iA == 0 else np.array([sol.h_single[t, iN, iA - 1, iK]]) # come back to check sol.h_single
                             res = minimize(obj, init_h, bounds=((hours_min, np.inf),), method='L-BFGS-B')
 
@@ -468,7 +545,7 @@ class HouseholdModelClass(EconModelClass):
                             obj = lambda x: self.obj_last_single(x[0], A, K, gender, kids)
 
                             # call optimizer
-                            hours_min = np.fmax(-A / self.wage_func(K, t, gender) + 1.0e-5, 0.0)  # minimum amount of hours that ensures positive consumption, check this!!!
+                            hours_min = np.fmax(-A / self.wage_func(K, gender) + 1.0e-5, 0.0)  # minimum amount of hours that ensures positive consumption, check this!!!
                             init_h = np.maximum(hours_min, 2.0) if iA == 0 else np.array([sol.h_single[t, iN, iA - 1, iK]]) # come back to check sol.h_single
                             res = minimize(obj, init_h, bounds=((hours_min, np.inf),), method='L-BFGS-B')
 
@@ -637,10 +714,10 @@ class HouseholdModelClass(EconModelClass):
             hours = 0.0
 
         # c. utility from consumption
-        util = usr.util(C_priv, C_pub,hours,gender)
+        util = usr.util(C_priv, C_pub,hours,gender,kids, par)
         
         # d. *expected* continuation value from savings
-        income = self.wage_func(capital,t) * hours
+        income = wage_func(capital, gender) * hours
         a_next = (1.0+par.r)*(assets + income - C_tot)
         k_next = capital + hours
 
