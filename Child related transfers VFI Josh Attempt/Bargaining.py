@@ -510,23 +510,35 @@ class HouseholdModelClass(EconModelClass):
         a_next = (1.0+par.r)*(assets + income - C_tot)
         k_next = capital + hours
 
-        # no birth
-        kids_next = kids
-        V_next = sol.V[t+1,kids_next]
-        V_next_no_birth = linear_interp_2d(par.a_grid,par.k_grid,V_next,a_next,k_next)
-
-        # birth
-        if (kids>=(par.Nn-1)):
-            # cannot have more children
-            V_next_birth = V_next_no_birth
-
+        # Look over V_next for both genders:
+        if gender == 'women':
+            kids_next = kids
+            V_next = sol.Vw_single[t + 1, kids_next]
+            V_next_no_birth = linear_interp_2d(par.grid_Aw,par.Kw_grid,V_next,a_next,k_next)
+            # birth
+            if (kids>=(par.Nn-1)):
+                # cannot have more children
+                V_next_birth = V_next_no_birth
+            else:
+                kids_next = kids + 1
+                V_next = sol.Vw_single[t + 1, kids_next]
+                V_next_birth = linear_interp_2d(par.grid_Aw,par.Kw_grid,V_next,a_next,k_next)
+            
         else:
-            kids_next = kids + 1
-            V_next = sol.V[t+1,kids_next]
-            V_next_birth = linear_interp_2d(par.a_grid,par.k_grid,V_next,a_next,k_next)
+            kids_next = kids
+            V_next = sol.Vm_single[t + 1, kids_next]
+            V_next_no_birth = linear_interp_2d(par.grid_Am,par.Km_grid,V_next,a_next,k_next)
+            # birth
+            if (kids>=(par.Nn-1)):
+                # cannot have more children
+                V_next_birth = V_next_no_birth
+            else:
+                kids_next = kids + 1
+                V_next = sol.Vm_single[t + 1, kids_next]
+                V_next_birth = linear_interp_2d(par.grid_Am,par.Km_grid,V_next,a_next,k_next)
 
         EV_next = par.p_birth * V_next_birth + (1-par.p_birth)*V_next_no_birth
-
+        
         # e. return value of choice (including penalty)
         return util + par.rho*EV_next + penalty
         
