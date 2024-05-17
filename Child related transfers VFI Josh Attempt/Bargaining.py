@@ -55,9 +55,12 @@ class HouseholdModelClass(EconModelClass):
         par.phi_w = 0.2
         par.phi_m = 0.2
         
-        par.theta_w = 0.1 # disutility of work for women
-        par.theta_m = 0.1 # disutility of work for men
+        par.theta0_w = 0.1 # constant disutility of work for women
+        par.theta0_m = 0.1 # constant disutility of work for men
+        par.theta1_w = 0.05 # additional disutility of work from children, women 
+        par.theta1_m = 0.05 # additional disutility of work from children, men
         par.gamma = 0.5 # disutility of work elasticity
+
         # state variables
         par.T = 10
         
@@ -106,7 +109,7 @@ class HouseholdModelClass(EconModelClass):
 
         # grids        
         par.k_max = 20.0 # maximum point in HC grid
-        par.Nk = 20 #30 # number of grid points in HC grid
+        par.num_k = 20 #30 # number of grid points in HC grid
         par.num_n = 2 # maximum number in my grid over children
         
     def allocate(self):
@@ -219,10 +222,13 @@ class HouseholdModelClass(EconModelClass):
         par.grid_Am = (1.0 - par.div_A_share) * par.grid_A
 
         # human capital grid
-        par.k_grid = nonlinspace(0.0,par.k_max,par.Nk,1.1)
+        par.kw_grid = nonlinspace(0.0,par.k_max,par.num_k,1.1)
+        par.km_grid = nonlinspace(0.0,par.k_max,par.num_k,1.1)
 
         # number of children grid
-        par.n_grid = np.arange(0,par.num_n)
+        par.nw_grid = np.arange(0,par.num_n)
+        par.nm_grid = np.arange(0,par.num_n)
+
 
         # power. non-linear grid with more mass in both tails.
         odd_num = np.mod(par.num_power,2)
@@ -292,99 +298,67 @@ class HouseholdModelClass(EconModelClass):
         sol = self.sol
         
         # loop through state variable: wealth
-        for iA in range(par.num_A):  # add human capital state variable!
-            for iK, K in enumerate(par.k_grid):
-                
-                # index
-                idx = (t, iA, iK)
-
-                
-                
-                
-                M = {}  # Dictionary to hold resources for each gender
-                for gender in ['woman', 'man']:
-                    #Resources
-                    Aw = par.grid_Aw[iA] if gender == 'woman' else par.grid_Am[iA]
-                    Am = par.grid_Am[iA] if gender == 'woman' else par.grid_Aw[iA]
-                    #M[gender] = resources_single(self, K, hours, Aw if gender == 'woman' else Am, 1 if gender == 'woman' else 2, par)
-
-                    if t == (par.T - 1):  # terminal period
-                        obj = lambda x: self.obj_last_single(x[0], Aw, K, gender, par)
-
-                        # call optimizer
-                        hours_min = np.fmax(-Aw / self.wage_func(K, t) + 1.0e-5, 0.0)  # minimum amount of hours that ensures positive consumption, check this!!!
-                        init_h = np.maximum(hours_min, 2.0) if i_A == 0 else np.array([sol.h_single[t, i_n, i_A - 1, i_K]]) # come back to check sol.h_single
-                        res = minimize(obj, init_h, bounds=((hours_min, np.inf),), method='L-BFGS-B')
-
-                        # Store results
-                        sol.C_priv_single[idx], sol.C_pub_single[idx] = intraperiod_allocation_single(M[gender], gender, par)
-                        sol.V_single[idx] = usr.util(sol.C_priv_single[idx], sol.C_pub_single[idx], gender, par)
+        for iN,kids in range(par.num_n): # addition of children
+            for iA in range(par.num_A):  
+                for iK, K in range(par.num_k): #addition of human capital
                     
-                    else:  # earlier periods
-                        # search over optimal total consumption, C
-                        obj = lambda C_tot: -self.value_of_choice_single(C_tot[0], M[gender], gender, sol.V_single[t + 1])
-                        res = optimize.minimize(obj, M[gender] / 2.0, bounds=((1.0e-8, M[gender]),))
+                    # index
+                    idx = (t, iN, iA, iK)
 
-                        # store results
-                        C = res.x
-                        sol.C_priv_single[idx], sol.C_pub_single[idx] = intraperiod_allocation_single(C, gender, par)
-                        sol.V_single[idx] = -res.fun
+                    for gender in ['woman', 'man']:
+                        #Resources
+                        A = par.grid_Aw[iA] if gender == 'woman' else par.grid_Am[iA]
+                        kids = par.nw_grid[iN] if gender == 'women' else par.nm_grid[iN]
+                        K = par.kw_grid[iK] if gender == 'women' else par.km_grid[iK]
 
-    
-    def solve_single_old(self,t):
-        par = self.par
-        sol = self.sol
-        
-        # loop through state variable: wealth
-        for iA in range(par.num_A): # add human capital state variable!
-            for iK, K in enumerate(par.k_grid):
+
+                        if t == (par.T - 1):  # terminal period
+                            obj = lambda x: self.obj_last_single(x[0], A, K, gender, kids)
+
+                            # call optimizer
+                            hours_min = np.fmax(-A / self.wage_func(K, t, gender) + 1.0e-5, 0.0)  # minimum amount of hours that ensures positive consumption, check this!!!
+                            init_h = np.maximum(hours_min, 2.0) if iA == 0 else np.array([sol.h_single[t, iN, iA - 1, iK]]) # come back to check sol.h_single
+                            res = minimize(obj, init_h, bounds=((hours_min, np.inf),), method='L-BFGS-B')
+
+                            # Store results separately for each gender
+                            if gender == 'woman':
+                                sol.Cw_priv_single[idx], sol.Cw_pub_single[idx] = cons_last_single(self, res.x[0], A, K, gender)
+                                sol.Hw_single[idx] = res.x[0]
+                                sol.Vw_single[idx] = -res.fun
+                            else:
+                                sol.Cm_priv_single[idx], sol.Cm_pub_single[idx] = cons_last_single(self, res.x[0], A, K, gender)
+                                sol.Hm_single[idx] = res.x[0]
+                                sol.Vm_single[idx] = -res.fun
+                            
+                        else:  # earlier periods
+                            # search over optimal total consumption, C
+                            obj = lambda x: -self.value_of_choice_single(x[0], x[1],A,K,kids, gender,t)
+                            
+                            # bounds on consumption 
+                            lb_c = 0.000001 # avoid dividing with zero
+                            ub_c = np.inf
+
+                            # bounds on hours
+                            lb_h = 0.0
+                            ub_h = np.inf 
+
+                            bounds = ((lb_c,ub_c),(lb_h,ub_h))
                 
-                # index
-                idx = (t,iA, iK)
-
-                # resources
-                Aw = par.grid_Aw[iA]
-                Am = par.grid_Am[iA]
+                            # call optimizer
+                            idx_last = (t+1,iN,iA,iK)
+                            init = np.array([sol.c[idx_last],sol.h[idx_last]])
+                            res = minimize(obj,init,bounds=bounds,method='L-BFGS-B',tol=1.0e-8) 
                 
-                Mw = resources_single(self,K, hours,Aw,1,par) # how to treat working hours?
-                Mm = resources_single(self,K, hours,Am,2,par) # 
-
-
-                if t == (par.T-1): # terminal period
-                    #create loop for both genders...
-                    #new: intra-period allocation: consume all resources
-                    obj = lambda x: self.obj_last_single(x[0],Aw,K,gender,par)
-
-                     # call optimizer
-                    hours_min = np.fmax( - assets / self.wage_func(capital,t) + 1.0e-5 , 0.0) # minimum amount of hours that ensures positive consumption
-                    init_h = np.maximum(hours_min,2.0) if i_a==0 else np.array([sol.h[t,i_n,i_a-1,i_k]])
-                    res = minimize(obj,init_h,bounds=((hours_min,np.inf),),method='L-BFGS-B')
-
-
-                    #Store results
-                    sol.Cw_priv_single[idx],sol.Cw_pub_single[idx] = intraperiod_allocation_single(Mw,woman,par)
-                    sol.Vw_single[idx] = usr.util(sol.Cw_priv_single[idx],sol.Cw_pub_single[idx],woman,par)
-                    
-                    sol.Cm_priv_single[idx],sol.Cm_pub_single[idx] = intraperiod_allocation_single(Mm,man,par)
-                    sol.Vm_single[idx] = usr.util(sol.Cm_priv_single[idx],sol.Cm_pub_single[idx],man,par)
-                
-                else: # earlier periods
-
-                    # search over optimal total consumption, C
-                    obj_w = lambda C_tot: - self.value_of_choice_single(C_tot[0],Mw,woman,sol.Vw_single[t+1])
-                    obj_m = lambda C_tot: - self.value_of_choice_single(C_tot[0],Mm,man,sol.Vm_single[t+1])
-                    
-                    res_w = optimize.minimize(obj_w,Mw/2.0,bounds=((1.0e-8,Mw),))
-                    res_m = optimize.minimize(obj_m,Mm/2.0,bounds=((1.0e-8,Mm),))
-                    
-                    # store results
-                    Cw = res_w.x
-                    sol.Cw_priv_single[idx],sol.Cw_pub_single[idx] = intraperiod_allocation_single(Cw,woman,par)
-                    sol.Vw_single[idx] = -res_w.fun
-                    
-                    Cm = res_m.x
-                    sol.Cm_priv_single[idx],sol.Cm_pub_single[idx] = intraperiod_allocation_single(Cm,man,par)
-                    sol.Vm_single[idx] = -res_m.fun                
+                            # Store results separately for each gender
+                            if gender == 'woman':
+                                sol.Cw_priv_single[idx], sol.Cw_pub_single[idx] = intraperiod_allocation_single(res.x[0],gender)
+                                sol.Hw_single[idx] = res.x[1]
+                                sol.Vw_single[idx] = -res.fun
+                            else:
+                                sol.Cm_priv_single[idx], sol.Cm_pub_single[idx] = intraperiod_allocation_single(res.x[0],gender)
+                                sol.Hm_single[idx] = res.x[1]
+                                sol.Vm_single[idx] = -res.fun
+                                
                         
     def solve_couple(self,t):
         par = self.par
@@ -459,6 +433,7 @@ class HouseholdModelClass(EconModelClass):
         # return objects
         return Cw_priv, Cm_priv, C_pub, Vw, Vm
 
+
     def value_of_choice_couple(self,C_tot,t,M_resources,iL,iP,power,Vw_next,Vm_next):
         sol = self.sol
         par = self.par
@@ -488,24 +463,55 @@ class HouseholdModelClass(EconModelClass):
         # return
         Val = power*Vw + (1.0-power)*Vm
         return Val , Cw_priv, Cm_priv, C_pub, Vw,Vm
-        
-    def value_of_choice_single(self,C_tot,M,gender,V_next):
-        par = self.par
+    
+    def value_of_choice_single(self,C_tot,hours,assets,capital,kids,gender,t):
 
+        # a. unpack
+        par = self.par
+        sol = self.sol
+
+        #b. Specify consumption levels. 
         # flow-utility
         C_priv = usr.cons_priv_single(C_tot,gender,par)
         C_pub = C_tot - C_priv
-        
-        Util = usr.util(C_priv,C_pub,gender,par)
-        
-        # continuation value
-        grid_A = par.grid_Aw if gender==woman else par.grid_Am
-        A = M - C_tot
 
-        Vnext = linear_interp.interp_1d(grid_A,V_next,A)
+        # b. penalty for violating bounds. 
+        penalty = 0.0
+        if C_tot < 0.0:
+            penalty += C_tot*1_000.0
+            C_tot = 1.0e-5
+        if hours < 0.0:
+            penalty += hours*1_000.0
+            hours = 0.0
+
+        # c. utility from consumption
+        util = usr.util(C_priv, C_pub,hours,gender)
         
-        # return discounted sum
-        return Util + par.beta*Vnext
+        # d. *expected* continuation value from savings
+        income = self.wage_func(capital,t) * hours
+        a_next = (1.0+par.r)*(assets + income - C_tot)
+        k_next = capital + hours
+
+        # no birth
+        kids_next = kids
+        V_next = sol.V[t+1,kids_next]
+        V_next_no_birth = linear_interp_2d(par.a_grid,par.k_grid,V_next,a_next,k_next)
+
+        # birth
+        if (kids>=(par.Nn-1)):
+            # cannot have more children
+            V_next_birth = V_next_no_birth
+
+        else:
+            kids_next = kids + 1
+            V_next = sol.V[t+1,kids_next]
+            V_next_birth = linear_interp_2d(par.a_grid,par.k_grid,V_next,a_next,k_next)
+
+        EV_next = par.p_birth * V_next_birth + (1-par.p_birth)*V_next_no_birth
+
+        # e. return value of choice (including penalty)
+        return util + par.rho*EV_next + penalty
+        
    
     def simulate(self):
         sol = self.sol
@@ -868,12 +874,12 @@ def resources_single(self,capital, hours, A, gender,par):
 
     return par.R*A + income
 
-def obj_last_single(self,hours,assets,capital,gender,par): #remember to add kids!
+def obj_last_single(self,hours,assets,capital,gender,kids): #remember to add kids!
     par = self.par
     conspriv = self.cons_last_single(hours,assets,capital)[0]
     conspub = self.cons_last_single(hours,assets,capital)[1]
     
-    return - usr.util(conspriv,conspub, hours, gender, par)
+    return - usr.util(conspriv,conspub, hours, gender, kids, par)
 
 def cons_last_single(self,hours,assets,capital, gender):
     #This returns C_priv, C_pub for singles in the last period
