@@ -40,8 +40,6 @@ def cons_priv_single(C_tot,gender,par):
     
     return C_tot/(1.0 + (alpha2/alpha1)**(1.0/(1.0-phi)) )
 
-def hours_single():
-
 
 
 def resources_single(A,gender,par):
