@@ -321,12 +321,13 @@ class HouseholdModelClass(EconModelClass):
                         A = par.grid_Aw[iA] if gender == 'woman' else par.grid_Am[iA]
                         kids = par.nw_grid[iN] if gender == 'woman' else par.nm_grid[iN]
                         K = par.kw_grid[iK] if gender == 'woman' else par.km_grid[iK]
+                        
 
                         if t == (par.T - 1):  # terminal period
-                            obj = lambda x: self.obj_last_single(x[0], A, K, gender, kids)
-
+                            obj = lambda x: obj_last_single(self, x[0], A, K, gender, kids)
+                            
                             # call optimizer
-                            hours_min = np.fmax(-A / self.wage_func(K,gender) + 1.0e-5, 0.0)  # minimum amount of hours that ensures positive consumption
+                            hours_min = np.fmax(-A / wage_func(self,K,gender) + 1.0e-5, 0.0)  # minimum amount of hours that ensures positive consumption
                             if iA == 0:
                                 init_h = np.maximum(hours_min, 2.0)
                             else:
@@ -336,21 +337,23 @@ class HouseholdModelClass(EconModelClass):
                                     init_h = np.array([sol.Hm_single[t, iN, iA - 1, iK]])
                             
                             res = minimize(obj, init_h, bounds=((hours_min, np.inf),), method='L-BFGS-B')
-
+                            
                             # Store results separately for each gender
                             if gender == 'woman':
-                                sol.Cw_priv_single[idx], sol.Cw_pub_single[idx] = self.cons_last_single(res.x[0], A, K, gender)
+                                sol.Cw_priv_single[idx], sol.Cw_pub_single[idx] = cons_last_single(self,res.x[0], A, K, gender)
                                 sol.Hw_single[idx] = res.x[0]
                                 sol.Vw_single[idx] = -res.fun
                             else:
-                                sol.Cm_priv_single[idx], sol.Cm_pub_single[idx] = self.cons_last_single(res.x[0], A, K, gender)
+                                sol.Cm_priv_single[idx], sol.Cm_pub_single[idx] = cons_last_single(self,res.x[0], A, K, gender)
                                 sol.Hm_single[idx] = res.x[0]
                                 sol.Vm_single[idx] = -res.fun
+
+                            #print(f"C_w: {sol.Cw_priv_single[idx]}")
+                            #print(f"Hw: {sol.Hw_single[idx]}")
                             
                         else:  # earlier periods
                             # search over optimal total consumption, C
                             obj = lambda x: -self.value_of_choice_single(x[0], x[1], A, K, kids, gender, t)
-                            
                             # bounds on consumption 
                             lb_c = 0.000001  # avoid dividing with zero
                             ub_c = np.inf
@@ -363,6 +366,7 @@ class HouseholdModelClass(EconModelClass):
                 
                             # call optimizer
                             idx_last = (t + 1, iN, iA, iK)
+                            
                             if gender == 'woman':
                                 init = np.array([sol.Cw_priv_single[idx_last], sol.Hw_single[idx_last]])
                             else:
@@ -375,10 +379,18 @@ class HouseholdModelClass(EconModelClass):
                                 sol.Cw_priv_single[idx], sol.Cw_pub_single[idx] = intraperiod_allocation_single(res.x[0], gender, par)
                                 sol.Hw_single[idx] = res.x[1]
                                 sol.Vw_single[idx] = -res.fun
+                                #print(sol.Vw_single[idx])
+                                #print(sol.Cw_priv_single[idx])
+                                #print(sol.Cw_pub_single[idx])
+                                #print(sol.Hw_single[idx])
                             else:
                                 sol.Cm_priv_single[idx], sol.Cm_pub_single[idx] = intraperiod_allocation_single(res.x[0], gender, par)
                                 sol.Hm_single[idx] = res.x[1]
                                 sol.Vm_single[idx] = -res.fun
+                                #print(sol.Vm_single[idx])
+                                #print(sol.Cm_priv_single[idx])
+                                #print(sol.Cm_pub_single[idx])
+                                #print(sol.Hm_single[idx])
 
                                 
                         
@@ -497,7 +509,7 @@ class HouseholdModelClass(EconModelClass):
         # flow-utility
         C_priv = usr.cons_priv_single(C_tot,gender,par)
         C_pub = C_tot - C_priv
-
+        
         # b. penalty for violating bounds. 
         penalty = 0.0
         if C_tot < 0.0:
@@ -514,13 +526,15 @@ class HouseholdModelClass(EconModelClass):
         income = wage_func(self, capital, gender) * hours
         a_next = (1.0+par.r)*(assets + income - C_tot)
         k_next = capital + hours
-
+        print(f"t={t}, gender={gender}, C_tot={C_tot}, hours={hours}, assets={assets}, capital={capital}, kids={kids}")
+        print(f"income={income}, a_next={a_next}, k_next={k_next}")
         # Look over V_next for both genders:
         if gender == 'women':
             kids_next = kids
             V_next = sol.Vw_single[t + 1, kids_next]
-
+            
             V_next_no_birth = interp_2d(par.grid_Aw,par.Kw_grid,V_next,a_next,k_next)
+            print(V_next_no_birth)
             # birth
             if (kids>=(par.num_n-1)):
                 # cannot have more children
@@ -912,8 +926,8 @@ def resources_single(self,capital, hours, A, gender,par):
 
 def obj_last_single(self,hours,assets,capital,gender,kids): #remember to add kids!
     par = self.par
-    conspriv = self.cons_last_single(hours,assets,capital)[0]
-    conspub = self.cons_last_single(hours,assets,capital)[1]
+    conspriv = cons_last_single(self,hours,assets,capital,gender)[0]
+    conspub = cons_last_single(self,hours,assets,capital,gender)[1]
     
     return - usr.util(conspriv,conspub, hours, gender, kids, par)
 
