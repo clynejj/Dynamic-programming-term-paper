@@ -3,7 +3,7 @@ import scipy.optimize as optimize
 
 from EconModel import EconModelClass
 from consav.grids import nonlinspace
-from consav import linear_interp, linear_interp_1d, linear_interp_2d, linear_interp_3d   
+from consav.linear_interp import interp_1d, interp_2d, interp_3d   
 from consav import quadrature
 from scipy.optimize import minimize,  NonlinearConstraint
 
@@ -114,6 +114,9 @@ class HouseholdModelClass(EconModelClass):
 
         #interest rate
         par.r = 0.03
+
+        # birth probability
+        par.p_birth = 0.05
         
     def allocate(self):
         par = self.par
@@ -300,6 +303,7 @@ class HouseholdModelClass(EconModelClass):
         sol.Cw_tot_trans_single = sol.Cw_tot_single.copy()
         sol.Cm_tot_trans_single = sol.Cm_tot_single.copy()
 
+
     def solve_single(self, t):
         par = self.par
         sol = self.sol
@@ -368,11 +372,11 @@ class HouseholdModelClass(EconModelClass):
 
                             # Store results separately for each gender
                             if gender == 'woman':
-                                sol.Cw_priv_single[idx], sol.Cw_pub_single[idx] = self.cons_single(res.x[0], A, K, gender, kids, t)
+                                sol.Cw_priv_single[idx], sol.Cw_pub_single[idx] = intraperiod_allocation_single(res.x[0], gender, par)
                                 sol.Hw_single[idx] = res.x[1]
                                 sol.Vw_single[idx] = -res.fun
                             else:
-                                sol.Cm_priv_single[idx], sol.Cm_pub_single[idx] = self.cons_single(res.x[0], A, K, gender, kids, t)
+                                sol.Cm_priv_single[idx], sol.Cm_pub_single[idx] = intraperiod_allocation_single(res.x[0], gender, par)
                                 sol.Hm_single[idx] = res.x[1]
                                 sol.Vm_single[idx] = -res.fun
 
@@ -482,6 +486,7 @@ class HouseholdModelClass(EconModelClass):
         Val = power*Vw + (1.0-power)*Vm
         return Val , Cw_priv, Cm_priv, C_pub, Vw,Vm
     
+
     def value_of_choice_single(self,C_tot,hours,assets,capital,kids,gender,t):
 
         # a. unpack
@@ -514,33 +519,34 @@ class HouseholdModelClass(EconModelClass):
         if gender == 'women':
             kids_next = kids
             V_next = sol.Vw_single[t + 1, kids_next]
-            V_next_no_birth = linear_interp_2d(par.grid_Aw,par.Kw_grid,V_next,a_next,k_next)
+
+            V_next_no_birth = interp_2d(par.grid_Aw,par.Kw_grid,V_next,a_next,k_next)
             # birth
-            if (kids>=(par.Nn-1)):
+            if (kids>=(par.num_n-1)):
                 # cannot have more children
                 V_next_birth = V_next_no_birth
             else:
                 kids_next = kids + 1
                 V_next = sol.Vw_single[t + 1, kids_next]
-                V_next_birth = linear_interp_2d(par.grid_Aw,par.Kw_grid,V_next,a_next,k_next)
+                V_next_birth = interp_2d(par.grid_Aw,par.Kw_grid,V_next,a_next,k_next)
             
         else:
             kids_next = kids
             V_next = sol.Vm_single[t + 1, kids_next]
-            V_next_no_birth = linear_interp_2d(par.grid_Am,par.Km_grid,V_next,a_next,k_next)
+            V_next_no_birth = interp_2d(par.grid_Am,par.km_grid,V_next,a_next,k_next)
             # birth
-            if (kids>=(par.Nn-1)):
+            if (kids>=(par.num_n-1)):
                 # cannot have more children
                 V_next_birth = V_next_no_birth
             else:
                 kids_next = kids + 1
                 V_next = sol.Vm_single[t + 1, kids_next]
-                V_next_birth = linear_interp_2d(par.grid_Am,par.Km_grid,V_next,a_next,k_next)
+                V_next_birth = interp_2d(par.grid_Am,par.km_grid,V_next,a_next,k_next)
 
         EV_next = par.p_birth * V_next_birth + (1-par.p_birth)*V_next_no_birth
         
         # e. return value of choice (including penalty)
-        return util + par.rho*EV_next + penalty
+        return util + par.beta*EV_next + penalty
         
    
     def simulate(self):
@@ -914,7 +920,7 @@ def obj_last_single(self,hours,assets,capital,gender,kids): #remember to add kid
 def cons_last_single(self,hours,assets,capital, gender):
     #This returns C_priv, C_pub for singles in the last period
     par = self.par
-    income = self.wage_func(self,capital,gender)*hours
+    income = wage_func(self,capital,gender)*hours
     #Consume everything in the last period
     C_tot = assets + income
     conspriv = usr.cons_priv_single(C_tot, gender, par)
