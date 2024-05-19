@@ -66,15 +66,15 @@ class HouseholdModelClass(EconModelClass):
         
         # wealth
         par.num_A = 50
-        par.max_A = 5.0
+        par.max_A = 10.0
         
         # human capital 
         par.num_H = 50
         par.max_H = 5.0
 
         # income
-        par.wage_const_1 = np.log(10_000.0) # constant, men
-        par.wage_const_2 = np.log(10_000.0) # constant, women
+        par.wage_const_1 = np.log(10.0) # constant, men
+        par.wage_const_2 = np.log(10.0) # constant, women
         par.wage_K_1 = 0.1 # return on human capital, men
         par.wage_K_2 = 0.1 # return on human capital, women
         par.delta = 0.1 # depreciation in human capital
@@ -348,8 +348,9 @@ class HouseholdModelClass(EconModelClass):
                                 sol.Hm_single[idx] = res.x[0]
                                 sol.Vm_single[idx] = -res.fun
 
-                            #print(f"C_w: {sol.Cw_priv_single[idx]}")
-                            #print(f"Hw: {sol.Hw_single[idx]}")
+                            print(f"C_w: {sol.Cw_priv_single[idx]}")
+                            print(f"Hw: {sol.Hw_single[idx]}")
+                            print(f"Vw: {sol.Vw_single[idx]}")
                             
                         else:  # earlier periods
                             # search over optimal total consumption, C
@@ -379,18 +380,18 @@ class HouseholdModelClass(EconModelClass):
                                 sol.Cw_priv_single[idx], sol.Cw_pub_single[idx] = intraperiod_allocation_single(res.x[0], gender, par)
                                 sol.Hw_single[idx] = res.x[1]
                                 sol.Vw_single[idx] = -res.fun
-                                #print(sol.Vw_single[idx])
-                                #print(sol.Cw_priv_single[idx])
-                                #print(sol.Cw_pub_single[idx])
-                                #print(sol.Hw_single[idx])
+                                print(f"sol.Vw_single: {sol.Vw_single[idx]}")
+                                print(f"sol.Cw_priv_single: {sol.Cw_priv_single[idx]}")
+                                print(f"sol.Cw_pub_single: {sol.Cw_pub_single[idx]}")
+                                print(f"sol.Hw_single: {sol.Hw_single[idx]}")
                             else:
                                 sol.Cm_priv_single[idx], sol.Cm_pub_single[idx] = intraperiod_allocation_single(res.x[0], gender, par)
                                 sol.Hm_single[idx] = res.x[1]
                                 sol.Vm_single[idx] = -res.fun
-                                #print(sol.Vm_single[idx])
-                                #print(sol.Cm_priv_single[idx])
-                                #print(sol.Cm_pub_single[idx])
-                                #print(sol.Hm_single[idx])
+                                print(f"sol.Vm_single: {sol.Vm_single[idx]}")
+                                print(f"sol.Cm_priv_single: {sol.Cm_priv_single[idx]}")
+                                print(f"sol.Cm_pub_single: {sol.Cm_pub_single[idx]}")
+                                print(f"sol.Hm_single: {sol.Hm_single[idx]}")
 
                                 
                         
@@ -526,15 +527,14 @@ class HouseholdModelClass(EconModelClass):
         income = wage_func(self, capital, gender) * hours
         a_next = (1.0+par.r)*(assets + income - C_tot)
         k_next = capital + hours
-        print(f"t={t}, gender={gender}, C_tot={C_tot}, hours={hours}, assets={assets}, capital={capital}, kids={kids}")
-        print(f"income={income}, a_next={a_next}, k_next={k_next}")
+        
         # Look over V_next for both genders:
         if gender == 'women':
             kids_next = kids
             V_next = sol.Vw_single[t + 1, kids_next]
             
             V_next_no_birth = interp_2d(par.grid_Aw,par.Kw_grid,V_next,a_next,k_next)
-            print(V_next_no_birth)
+            
             # birth
             if (kids>=(par.num_n-1)):
                 # cannot have more children
@@ -556,7 +556,7 @@ class HouseholdModelClass(EconModelClass):
                 kids_next = kids + 1
                 V_next = sol.Vm_single[t + 1, kids_next]
                 V_next_birth = interp_2d(par.grid_Am,par.km_grid,V_next,a_next,k_next)
-
+                
         EV_next = par.p_birth * V_next_birth + (1-par.p_birth)*V_next_no_birth
         
         # e. return value of choice (including penalty)
