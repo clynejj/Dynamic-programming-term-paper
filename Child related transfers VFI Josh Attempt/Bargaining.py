@@ -3,7 +3,7 @@ import scipy.optimize as optimize
 
 from EconModel import EconModelClass
 from consav.grids import nonlinspace
-from consav.linear_interp import interp_1d, interp_2d, interp_3d, interp_2d_vec, binary_search
+from consav.linear_interp import interp_1d, interp_2d, interp_3d, interp_2d_vec, binary_search, interp_3d_vec
 from consav import quadrature
 from scipy.optimize import minimize,  NonlinearConstraint
 
@@ -65,11 +65,11 @@ class HouseholdModelClass(EconModelClass):
         par.T = 10
         
         # wealth
-        par.num_A = 50
+        par.num_A = 20
         par.max_A = 10.0
         
         # human capital 
-        par.num_H = 50
+        par.num_H = 20
         par.max_H = 5.0
 
         # income
@@ -90,7 +90,7 @@ class HouseholdModelClass(EconModelClass):
         par.num_power = 21
 
         # love/match quality
-        par.num_love = 41
+        par.num_love = 20
         par.max_love = 1.0
 
         par.sigma_love = 0.1
@@ -111,7 +111,7 @@ class HouseholdModelClass(EconModelClass):
 
         # grids        
         par.k_max = 20.0 # maximum point in HC grid
-        par.num_k = 20 #30 # number of grid points in HC grid
+        par.num_k = 15 #30 # number of grid points in HC grid
         par.num_n = 2 # maximum number in my grid over children
 
         #interest rate
@@ -183,14 +183,6 @@ class HouseholdModelClass(EconModelClass):
         sol.Vw_plus_vec = np.zeros(par.num_shock_love) 
         sol.Vm_plus_vec = np.zeros(par.num_shock_love) 
 
-        # EGM?? I think this is here from previous version... 
-        sol.marg_V_couple = np.zeros(shape_couple)
-        sol.marg_V_remain_couple = np.zeros(shape_couple)
-
-        shape_egm = (par.num_power,par.num_love,par.num_A_pd)
-        sol.EmargU_pd = np.zeros(shape_egm)
-        sol.C_tot_pd = np.zeros(shape_egm)
-        sol.M_pd = np.zeros(shape_egm)
 
         # pre-compute optimal consumption allocation - should I add human capital here?
         shape_pre = (par.num_power,par.num_Ctot)
@@ -269,13 +261,7 @@ class HouseholdModelClass(EconModelClass):
         par.grid_Ctot = nonlinspace(1.0e-6,par.max_Ctot,par.num_Ctot,1.1)
         par.grid_Htot = nonlinspace(1.0e-6,par.max_Htot,par.num_Htot,1.1)
 
-        # EGM
-        par.grid_util = np.nan + np.ones((par.num_power,par.num_Ctot))
-        par.grid_marg_u = np.nan + np.ones(par.grid_util.shape)
-        par.grid_inv_marg_u = np.flip(par.grid_Ctot)
-        par.grid_marg_u_for_inv = np.nan + np.ones(par.grid_util.shape)
-
-        par.grid_A_pd = nonlinspace(0.0,par.max_A,par.num_A_pd,1.1)
+       
 
     def solve(self):
         sol = self.sol
@@ -581,7 +567,7 @@ class HouseholdModelClass(EconModelClass):
         # return objects
         return Cw_priv, Cm_priv, C_pub, Vw, Vm
 
-    def value_of_choice_couple(self, C_tot, Hw, Hm, t, M_resources, iL, iP, power, Vw_next, Vm_next, kids):
+    def value_of_choice_couple(self, C_tot, H_tot, t, assets, iL, iP, power, Vw_next, Vm_next, kids):
         sol = self.sol
         par = self.par
 
@@ -589,6 +575,7 @@ class HouseholdModelClass(EconModelClass):
 
         # Current utility from consumption allocation
         Cw_priv, Cm_priv, C_pub = intraperiod_allocation(C_tot, iP, sol, par)
+        Hw, Hm = intraperiod_allocation_hours(H_tot, iP, sol, par)
         Vw = usr.util(Cw_priv, C_pub, woman, par, love, kids)
         Vm = usr.util(Cm_priv, C_pub, man, par, love, kids)
 
@@ -599,15 +586,15 @@ class HouseholdModelClass(EconModelClass):
             income_man = wage_func(self, sol.Km_next, man) * Hm
             total_income = income_woman + income_man
 
-            a_next = M_resources + total_income - C_tot  # Next period's assets
+            a_next = assets + total_income - C_tot  # Next period's assets
             k_next_woman = sol.Kw_next + Hw  # Next period's human capital for woman
             k_next_man = sol.Km_next + Hm  # Next period's human capital for man
 
             # Interpolate future values
             love_next_vec = love + par.grid_shock_love
 
-            interp_2d_vec(par.grid_love, par.grid_A, Vw_next, love_next_vec, a_next, sol.Vw_plus_vec)
-            interp_2d_vec(par.grid_love, par.grid_A, Vm_next, love_next_vec, a_next, sol.Vm_plus_vec)
+            interp_3d_vec(par.grid_love, par.grid_A, par.kw_grid, Vw_next, love_next_vec, a_next, k_next_woman, sol.Vw_plus_vec)
+            interp_3d_vec(par.grid_love, par.grid_A, par.km_grid, Vm_next, love_next_vec, a_next, k_next_man, sol.Vm_plus_vec)
 
             EVw_plus = sol.Vw_plus_vec @ par.grid_weight_love
             EVm_plus = sol.Vm_plus_vec @ par.grid_weight_love

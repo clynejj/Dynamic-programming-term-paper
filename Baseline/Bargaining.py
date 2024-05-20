@@ -214,7 +214,7 @@ class HouseholdModelClass(EconModelClass):
 
         # pre-computation
         par.grid_Ctot = nonlinspace(1.0e-6,par.max_Ctot,par.num_Ctot,1.1)
-        par.grid_Htot = nonlinspace(1.0e-6,par.max_Htot,par.num_Htot,1.1)
+        
 
         # EGM
         par.grid_util = np.nan + np.ones((par.num_power,par.num_Ctot))
