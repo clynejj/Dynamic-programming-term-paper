@@ -26,20 +26,21 @@ typedef struct par_struct
  double* prob_partner_A_w;
  double* prob_partner_A_m;
  bool interp_inverse;
+ char* interp_method;
+ bool precompute_intratemporal;
  int num_Ctot;
  double max_Ctot;
  bool do_egm;
- bool analytic_marg_u_single;
- bool analytic_inv_marg_u_single;
  int num_A_pd;
  double max_A_pd;
  int num_marg_u;
  int seed;
  int simT;
  int simN;
- bool do_cpp;
+ double init_A;
+ double init_love;
+ int init_power_idx;
  int threads;
- bool interp_power;
  bool centered_gradient;
  double* grid_A;
  double* grid_Aw;
@@ -50,7 +51,6 @@ typedef struct par_struct
  double* grid_shock_love;
  double* grid_weight_love;
  double* grid_Ctot;
- double* grid_util;
  double* grid_marg_u;
  double* grid_marg_u_for_inv;
  double* grid_C_for_marg_u;
@@ -90,6 +90,8 @@ double get_double_par_struct(par_struct* x, char* name){
  else if( strcmp(name,"p_meet") == 0 ){ return x->p_meet; }
  else if( strcmp(name,"max_Ctot") == 0 ){ return x->max_Ctot; }
  else if( strcmp(name,"max_A_pd") == 0 ){ return x->max_A_pd; }
+ else if( strcmp(name,"init_A") == 0 ){ return x->init_A; }
+ else if( strcmp(name,"init_love") == 0 ){ return x->init_love; }
  else {return NAN;}
 
 }
@@ -108,6 +110,7 @@ int get_int_par_struct(par_struct* x, char* name){
  else if( strcmp(name,"seed") == 0 ){ return x->seed; }
  else if( strcmp(name,"simT") == 0 ){ return x->simT; }
  else if( strcmp(name,"simN") == 0 ){ return x->simN; }
+ else if( strcmp(name,"init_power_idx") == 0 ){ return x->init_power_idx; }
  else if( strcmp(name,"threads") == 0 ){ return x->threads; }
  else {return -9999;}
 
@@ -127,7 +130,6 @@ double* get_double_p_par_struct(par_struct* x, char* name){
  else if( strcmp(name,"grid_shock_love") == 0 ){ return x->grid_shock_love; }
  else if( strcmp(name,"grid_weight_love") == 0 ){ return x->grid_weight_love; }
  else if( strcmp(name,"grid_Ctot") == 0 ){ return x->grid_Ctot; }
- else if( strcmp(name,"grid_util") == 0 ){ return x->grid_util; }
  else if( strcmp(name,"grid_marg_u") == 0 ){ return x->grid_marg_u; }
  else if( strcmp(name,"grid_marg_u_for_inv") == 0 ){ return x->grid_marg_u_for_inv; }
  else if( strcmp(name,"grid_C_for_marg_u") == 0 ){ return x->grid_C_for_marg_u; }
@@ -151,13 +153,18 @@ double* get_double_p_par_struct(par_struct* x, char* name){
 bool get_bool_par_struct(par_struct* x, char* name){
 
  if( strcmp(name,"interp_inverse") == 0 ){ return x->interp_inverse; }
+ else if( strcmp(name,"precompute_intratemporal") == 0 ){ return x->precompute_intratemporal; }
  else if( strcmp(name,"do_egm") == 0 ){ return x->do_egm; }
- else if( strcmp(name,"analytic_marg_u_single") == 0 ){ return x->analytic_marg_u_single; }
- else if( strcmp(name,"analytic_inv_marg_u_single") == 0 ){ return x->analytic_inv_marg_u_single; }
- else if( strcmp(name,"do_cpp") == 0 ){ return x->do_cpp; }
- else if( strcmp(name,"interp_power") == 0 ){ return x->interp_power; }
  else if( strcmp(name,"centered_gradient") == 0 ){ return x->centered_gradient; }
  else {return false;}
+
+}
+
+
+char* get_char_p_par_struct(par_struct* x, char* name){
+
+ if( strcmp(name,"interp_method") == 0 ){ return x->interp_method; }
+ else {return NULL;}
 
 }
 
