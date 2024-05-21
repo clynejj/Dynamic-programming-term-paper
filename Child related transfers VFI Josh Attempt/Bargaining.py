@@ -3,7 +3,7 @@ import scipy.optimize as optimize
 
 from EconModel import EconModelClass
 from consav.grids import nonlinspace
-from consav.linear_interp import interp_1d, interp_2d, interp_3d   
+from consav.linear_interp import interp_1d, interp_2d, interp_3d, interp_2d_vec, binary_search, interp_3d_vec
 from consav import quadrature
 from scipy.optimize import minimize,  NonlinearConstraint
 
@@ -65,11 +65,11 @@ class HouseholdModelClass(EconModelClass):
         par.T = 10
         
         # wealth
-        par.num_A = 50
+        par.num_A = 20
         par.max_A = 10.0
         
         # human capital 
-        par.num_H = 50
+        par.num_H = 20
         par.max_H = 5.0
 
         # income
@@ -90,7 +90,7 @@ class HouseholdModelClass(EconModelClass):
         par.num_power = 21
 
         # love/match quality
-        par.num_love = 41
+        par.num_love = 20
         par.max_love = 1.0
 
         par.sigma_love = 0.1
@@ -99,6 +99,8 @@ class HouseholdModelClass(EconModelClass):
         # pre-computation
         par.num_Ctot = 100
         par.max_Ctot = par.max_A*2
+        par.num_Htot = 100
+        par.max_Htot = par.max_A*2
 
         par.num_A_pd = par.num_A * 2
 
@@ -109,7 +111,7 @@ class HouseholdModelClass(EconModelClass):
 
         # grids        
         par.k_max = 20.0 # maximum point in HC grid
-        par.num_k = 20 #30 # number of grid points in HC grid
+        par.num_k = 15 #30 # number of grid points in HC grid
         par.num_n = 2 # maximum number in my grid over children
 
         #interest rate
@@ -152,7 +154,7 @@ class HouseholdModelClass(EconModelClass):
         sol.Hm_trans_single = np.nan + np.ones(shape_single)
 
         # couples
-        shape_couple = (par.T,par.num_power,par.num_love,par.num_A, par.num_k, par.num_k)
+        shape_couple = (par.T,par.num_power,par.num_love,par.num_A, par.num_k, par.num_k, par.num_n)
         sol.Vw_couple = np.nan + np.ones(shape_couple)
         sol.Vm_couple = np.nan + np.ones(shape_couple)
         
@@ -160,6 +162,8 @@ class HouseholdModelClass(EconModelClass):
         sol.Cm_priv_couple = np.nan + np.ones(shape_couple)
         sol.C_pub_couple = np.nan + np.ones(shape_couple)
         sol.C_tot_couple = np.nan + np.ones(shape_couple)
+        sol.Hw_couple = np.nan + np.ones(shape_couple)
+        sol.Hm_couple = np.nan + np.ones(shape_couple)
 
         sol.Vw_remain_couple = np.nan + np.ones(shape_couple)
         sol.Vm_remain_couple = np.nan + np.ones(shape_couple)
@@ -168,6 +172,8 @@ class HouseholdModelClass(EconModelClass):
         sol.Cm_priv_remain_couple = np.nan + np.ones(shape_couple)
         sol.C_pub_remain_couple = np.nan + np.ones(shape_couple)
         sol.C_tot_remain_couple = np.nan + np.ones(shape_couple)
+        sol.Hw_remain_couple = np.nan + np.ones(shape_couple)
+        sol.Hm_remain_couple = np.nan + np.ones(shape_couple)
 
         sol.power_idx = np.zeros(shape_couple,dtype=np.int_)
         sol.power = np.zeros(shape_couple)
@@ -177,14 +183,6 @@ class HouseholdModelClass(EconModelClass):
         sol.Vw_plus_vec = np.zeros(par.num_shock_love) 
         sol.Vm_plus_vec = np.zeros(par.num_shock_love) 
 
-        # EGM?? I think this is here from previous version... 
-        sol.marg_V_couple = np.zeros(shape_couple)
-        sol.marg_V_remain_couple = np.zeros(shape_couple)
-
-        shape_egm = (par.num_power,par.num_love,par.num_A_pd)
-        sol.EmargU_pd = np.zeros(shape_egm)
-        sol.C_tot_pd = np.zeros(shape_egm)
-        sol.M_pd = np.zeros(shape_egm)
 
         # pre-compute optimal consumption allocation - should I add human capital here?
         shape_pre = (par.num_power,par.num_Ctot)
@@ -261,14 +259,9 @@ class HouseholdModelClass(EconModelClass):
 
         # pre-computation
         par.grid_Ctot = nonlinspace(1.0e-6,par.max_Ctot,par.num_Ctot,1.1)
+        par.grid_Htot = nonlinspace(1.0e-6,par.max_Htot,par.num_Htot,1.1)
 
-        # EGM
-        par.grid_util = np.nan + np.ones((par.num_power,par.num_Ctot))
-        par.grid_marg_u = np.nan + np.ones(par.grid_util.shape)
-        par.grid_inv_marg_u = np.flip(par.grid_Ctot)
-        par.grid_marg_u_for_inv = np.nan + np.ones(par.grid_util.shape)
-
-        par.grid_A_pd = nonlinspace(0.0,par.max_A,par.num_A_pd,1.1)
+       
 
     def solve(self):
         sol = self.sol
@@ -393,23 +386,78 @@ class HouseholdModelClass(EconModelClass):
                                 print(f"sol.Cm_pub_single: {sol.Cm_pub_single[idx]}")
                                 print(f"sol.Hm_single: {sol.Hm_single[idx]}")
 
+    def solve_couple_(self,t):
+            par = self.par
+            sol = self.sol
+
+            remain_Vw,remain_Vm,remain_Cw_priv,remain_Cm_priv,remain_C_pub = np.ones(par.num_power),np.ones(par.num_power),np.ones(par.num_power),np.ones(par.num_power),np.ones(par.num_power)
+            remain_Hw, remain_Hm = np.ones(par.num_power), np.ones(par.num_power)  # For storing hours worked
+
+            Vw_next = None
+            Vm_next = None
+            for iN, kids in enumerate(par.nw_grid):
+                for iL,love in enumerate(par.grid_love):
+                    for iA,A in enumerate(par.grid_A): # add human capital state variable!
+                        for iK1, K1 in enumerate(par.k_grid):
+                            for iK2, K2 in enumerate(par.k_grid):
                                 
-                        
-    def solve_couple(self,t):
+                                M_resources = resources_couple(A,par, K1, K2) 
+
+                                starting_val = None
+                                for iP,power in enumerate(par.grid_power): # looop over different power levels!
+                                    # continuation values
+                                    if t<(par.T-1):
+                                        Vw_next = self.sol.Vw_couple[t+1,iP]
+                                        Vm_next = self.sol.Vm_couple[t+1,iP]
+
+                                    # starting values
+                                    if iP>0:
+                                        C_tot_last = remain_Cw_priv[iP-1] + remain_Cm_priv[iP-1] + remain_C_pub[iP-1]
+                                        starting_val = np.array([C_tot_last])
+                                
+                                # solve problem if remaining married
+                                remain_Cw_priv[iP], remain_Cm_priv[iP], remain_C_pub[iP], remain_Vw[iP], remain_Vm[iP], remain_Hw[iP], remain_Hm[iP]  = self.solve_remain_couple(t,M_resources,iL,iP,power,Vw_next,Vm_next,N,starting_val=starting_val)
+
+                                # check the participation constraints - this applies the limited commitment bargaining scheme 
+                                idx_single = (t,iA)
+                                idx_couple = lambda iP: (t,iP,iL,iA)
+
+                                list_start_as_couple = (sol.Vw_couple,sol.Vm_couple,sol.Cw_priv_couple,sol.Cm_priv_couple,sol.C_pub_couple)
+                                list_remain_couple = (remain_Vw,remain_Vm,remain_Cw_priv,remain_Cm_priv,remain_C_pub)
+                                list_trans_to_single = (sol.Vw_single,sol.Vm_single,sol.Cw_priv_single,sol.Cm_priv_single,sol.Cw_pub_single) # last input here not important in case of divorce
+                            
+                                Sw = remain_Vw - sol.Vw_single[idx_single] 
+                                Sm = remain_Vm - sol.Vm_single[idx_single] 
+                            
+                                check_participation_constraints(sol.power_idx,sol.power,Sw,Sm,idx_single,idx_couple,list_start_as_couple,list_remain_couple,list_trans_to_single, par)
+
+                                # save remain values
+                                for iP,power in enumerate(par.grid_power): # looop over different power levels!
+                                    idx = (t,iP,iL,iA)
+                                    sol.Cw_priv_remain_couple[idx] = remain_Cw_priv[iP] 
+                                    sol.Cm_priv_remain_couple[idx] = remain_Cm_priv[iP]
+                                    sol.C_pub_remain_couple[idx] = remain_C_pub[iP]
+                                    sol.Vw_remain_couple[idx] = remain_Vw[iP]
+                                    sol.Vm_remain_couple[idx] = remain_Vm[iP]
+                            
+
+
+    def solve_couple_old(self,t):
         par = self.par
         sol = self.sol
 
         remain_Vw,remain_Vm,remain_Cw_priv,remain_Cm_priv,remain_C_pub = np.ones(par.num_power),np.ones(par.num_power),np.ones(par.num_power),np.ones(par.num_power),np.ones(par.num_power)
         
+
         Vw_next = None
         Vm_next = None
         for iL,love in enumerate(par.grid_love):
             for iA,A in enumerate(par.grid_A): # add human capital state variable!
                 for iK1, K1 in enumerate(par.k_grid):
                     for iK2, K2 in enumerate(par.k_grid):
-
+                        
                         M_resources = resources_couple(A,par, K1, K2) 
-                    
+
                         starting_val = None
                         for iP,power in enumerate(par.grid_power): # looop over different power levels!
                             # continuation values
@@ -447,11 +495,62 @@ class HouseholdModelClass(EconModelClass):
                             sol.Vw_remain_couple[idx] = remain_Vw[iP]
                             sol.Vm_remain_couple[idx] = remain_Vm[iP]
 
-    def solve_remain_couple(self,t,M_resources,iL,iP,power,Vw_next,Vm_next,starting_val = None):
+    def solve_remain_couple(self, t, M_resources, iL, iP, power, Vw_next, Vm_next, kids, starting_val=None):
+            par = self.par
+
+            # Objective function
+            obj = lambda x: -self.value_of_choice_couple(x[0], x[1], x[2], t, M_resources, iL, iP, power, Vw_next, Vm_next, kids)[0]
+            if starting_val is None:
+                x0 = np.array([M_resources * 0.8, 0.4, 0.4])  # Initial guess: [C_tot, hours_woman, hours_man]
+            else:
+                x0 = np.concatenate([starting_val, [0.4, 0.4]])
+
+            # Bounds for [C_tot, hours_woman, hours_man]
+            bounds = ((1.0e-6, M_resources - 1.0e-6), (0.0, np.inf), (0.0, np.inf))
+
+            # Optimize
+            res = optimize.minimize(obj, x0, bounds=bounds, method='SLSQP')
+            C_tot, hours_woman, hours_man = res.x
+
+            # Implied consumption allocation (re-calculation)
+            _, Cw_priv, Cm_priv, C_pub, Vw, Vm = self.value_of_choice_couple(C_tot, hours_woman, hours_man, t, M_resources, iL, iP, power, Vw_next, Vm_next, kids)
+
+            # Return objects
+            return Cw_priv, Cm_priv, C_pub, Vw, Vm, hours_woman, hours_man
+
+    
+    
+    def solve_remain_couple_old(self,t,iL,iP,power,Vw_next,Vm_next,starting_val = None):
         par = self.par
 
         if t==(par.T-1): # Terminal period
-            C_tot = M_resources
+            obj = lambda x: obj_last_single(self, x[0], A, K, gender, kids)
+                            
+            # call optimizer
+            hours_min = np.fmax(-A / wage_func(self,K,gender) + 1.0e-5, 0.0)  # minimum amount of hours that ensures positive consumption
+            if iA == 0:
+                init_h = np.maximum(hours_min, 2.0)
+            else:
+                if gender == 'woman':
+                    init_h = np.array([sol.Hw_single[t, iN, iA - 1, iK]])
+                else:
+                    init_h = np.array([sol.Hm_single[t, iN, iA - 1, iK]])
+            
+            res = minimize(obj, init_h, bounds=((hours_min, np.inf),), method='L-BFGS-B')
+            
+            # Store results separately for each gender
+            if gender == 'woman':
+                sol.Cw_priv_single[idx], sol.Cw_pub_single[idx] = cons_last_single(self,res.x[0], A, K, gender)
+                sol.Hw_single[idx] = res.x[0]
+                sol.Vw_single[idx] = -res.fun
+            else:
+                sol.Cm_priv_single[idx], sol.Cm_pub_single[idx] = cons_last_single(self,res.x[0], A, K, gender)
+                sol.Hm_single[idx] = res.x[0]
+                sol.Vm_single[idx] = -res.fun
+
+            print(f"C_w: {sol.Cw_priv_single[idx]}")
+            print(f"Hw: {sol.Hw_single[idx]}")
+            print(f"Vw: {sol.Vw_single[idx]}")
 
         else:
             # objective function
@@ -468,8 +567,47 @@ class HouseholdModelClass(EconModelClass):
         # return objects
         return Cw_priv, Cm_priv, C_pub, Vw, Vm
 
+    def value_of_choice_couple(self, C_tot, H_tot, t, assets, iL, iP, power, Vw_next, Vm_next, kids):
+        sol = self.sol
+        par = self.par
 
-    def value_of_choice_couple(self,C_tot,t,M_resources,iL,iP,power,Vw_next,Vm_next):
+        love = par.grid_love[iL]
+
+        # Current utility from consumption allocation
+        Cw_priv, Cm_priv, C_pub = intraperiod_allocation(C_tot, iP, sol, par)
+        Hw, Hm = intraperiod_allocation_hours(H_tot, iP, sol, par)
+        Vw = usr.util(Cw_priv, C_pub, woman, par, love, kids)
+        Vm = usr.util(Cm_priv, C_pub, man, par, love, kids)
+
+        # Add continuation value
+        if t < (par.T - 1):
+            # Calculate income based on work hours and human capital
+            income_woman = wage_func(self, sol.Kw_next, woman) * Hw
+            income_man = wage_func(self, sol.Km_next, man) * Hm
+            total_income = income_woman + income_man
+
+            a_next = assets + total_income - C_tot  # Next period's assets
+            k_next_woman = sol.Kw_next + Hw  # Next period's human capital for woman
+            k_next_man = sol.Km_next + Hm  # Next period's human capital for man
+
+            # Interpolate future values
+            love_next_vec = love + par.grid_shock_love
+
+            interp_3d_vec(par.grid_love, par.grid_A, par.kw_grid, Vw_next, love_next_vec, a_next, k_next_woman, sol.Vw_plus_vec)
+            interp_3d_vec(par.grid_love, par.grid_A, par.km_grid, Vm_next, love_next_vec, a_next, k_next_man, sol.Vm_plus_vec)
+
+            EVw_plus = sol.Vw_plus_vec @ par.grid_weight_love
+            EVm_plus = sol.Vm_plus_vec @ par.grid_weight_love
+
+            Vw += par.beta * EVw_plus
+            Vm += par.beta * EVm_plus
+
+        # Return
+        Val = power * Vw + (1.0 - power) * Vm
+        return Val, Cw_priv, Cm_priv, C_pub, Vw, Vm
+
+    
+    def value_of_choice_couple_old(self,C_tot,t,M_resources,iL,iP,power,Vw_next,Vm_next):
         sol = self.sol
         par = self.par
 
@@ -479,7 +617,7 @@ class HouseholdModelClass(EconModelClass):
         Cw_priv, Cm_priv, C_pub = intraperiod_allocation(C_tot,iP,sol,par)
         Vw = usr.util(Cw_priv,C_pub,woman,par,love)
         Vm = usr.util(Cm_priv,C_pub,man,par,love)
-    
+
         # add continuation value
         if t < (par.T-1):
             # savings_vec = np.ones(par.num_shock_love)
@@ -522,7 +660,7 @@ class HouseholdModelClass(EconModelClass):
 
         # c. utility from consumption
         util = usr.util(C_priv, C_pub,hours,gender,kids, par)
-        
+        print(f"util: {util}")
         # d. *expected* continuation value from savings
         income = wage_func(self, capital, gender) * hours
         a_next = (1.0+par.r)*(assets + income - C_tot)
@@ -700,12 +838,21 @@ def intraperiod_allocation_single(C_tot,gender,par):
 def intraperiod_allocation(C_tot,iP,sol,par):
 
     # interpolate pre-computed solution
-    j1 = linear_interp.binary_search(0,par.num_Ctot,par.grid_Ctot,C_tot)
-    Cw_priv = linear_interp_1d._interp_1d(par.grid_Ctot,sol.pre_Ctot_Cw_priv[iP],C_tot,j1)
-    Cm_priv = linear_interp_1d._interp_1d(par.grid_Ctot,sol.pre_Ctot_Cm_priv[iP],C_tot,j1)
+    j1 = binary_search(0,par.num_Ctot,par.grid_Ctot,C_tot)
+    Cw_priv = interp_1d(par.grid_Ctot,sol.pre_Ctot_Cw_priv[iP],C_tot,j1)
+    Cm_priv = interp_1d(par.grid_Ctot,sol.pre_Ctot_Cm_priv[iP],C_tot,j1)
     C_pub = C_tot - Cw_priv - Cm_priv 
 
     return Cw_priv, Cm_priv, C_pub
+
+def intraperiod_allocation_hours(H_tot,iP,sol,par):
+    
+    # interpolate pre-computed solution
+    j1 = binary_search(0,par.num_Htot,par.grid_Htot,H_tot)
+    Hw = interp_1d(par.grid_Htot,sol.pre_Htot_Hw[iP],H_tot,j1)
+    Hm = interp_1d(par.grid_Htot,sol.pre_Htot_Hm[iP],H_tot,j1)
+
+    return Hw, Hm
 
 def solve_intraperiod_couple(C_tot,power,par,starting_val=None):
     
@@ -930,6 +1077,11 @@ def obj_last_single(self,hours,assets,capital,gender,kids): #remember to add kid
     conspub = cons_last_single(self,hours,assets,capital,gender)[1]
     
     return - usr.util(conspriv,conspub, hours, gender, kids, par)
+
+def obj_last_couple(self, hours_man, hours_women, assets, capital1, capital2, power, love, kids):
+    par = self.par
+
+    return - (power*usr.util(conspriv1,conspub1,kids) + (1.0-power)*usr.util(conspriv2,conspub2,kids))
 
 def cons_last_single(self,hours,assets,capital, gender):
     #This returns C_priv, C_pub for singles in the last period

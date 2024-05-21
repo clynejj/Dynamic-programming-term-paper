@@ -214,6 +214,7 @@ class HouseholdModelClass(EconModelClass):
 
         # pre-computation
         par.grid_Ctot = nonlinspace(1.0e-6,par.max_Ctot,par.num_Ctot,1.1)
+        
 
         # EGM
         par.grid_util = np.nan + np.ones((par.num_power,par.num_Ctot))
@@ -387,7 +388,6 @@ class HouseholdModelClass(EconModelClass):
 
             linear_interp.interp_2d_vec(par.grid_love,par.grid_A , Vw_next, love_next_vec,sol.savings_vec,sol.Vw_plus_vec)
             linear_interp.interp_2d_vec(par.grid_love,par.grid_A , Vm_next, love_next_vec,sol.savings_vec,sol.Vm_plus_vec)
-
             EVw_plus = sol.Vw_plus_vec @ par.grid_weight_love
             EVm_plus = sol.Vm_plus_vec @ par.grid_weight_love
 
