@@ -43,9 +43,19 @@ class HouseholdModelClass(EconModelClass):
         par.div_A_share = 0.5 # divorce share of wealth to wife
         par.div_cost = 0.0
         
+        # human capital 
+        par.num_H = 20
+        par.max_H = 5.0
+
         # income
         par.inc_w = 1.0
         par.inc_m = 1.0
+
+        par.wage_const_1 = np.log(10.0) # constant, men
+        par.wage_const_2 = np.log(10.0) # constant, women
+        par.wage_K_1 = 0.1 # return on human capital, men
+        par.wage_K_2 = 0.1 # return on human capital, women
+        par.delta = 0.1 # depreciation in human capital
 
         # Utility: gender-specific parameters
         par.rho_w = 2.0        # CRRA
