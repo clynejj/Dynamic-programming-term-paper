@@ -380,8 +380,8 @@ namespace single
                 EGM_single_to_single(t, man, sol, par);
             }
             else
-            {
-#pragma omp parallel num_threads(par->threads)
+                {
+                #pragma omp parallel num_threads(par->threads)
                 {
 
                     // 1. allocate objects for solver
@@ -393,8 +393,8 @@ namespace single
                     auto opt = nlopt_create(NLOPT_LN_BOBYQA, dim); // NLOPT_LD_MMA NLOPT_LD_LBFGS NLOPT_GN_ORIG_DIRECT
                     double minf = 0.0;
 
-// 2. loop over assets
-#pragma omp for
+                    // 2. loop over assets
+                    #pragma omp for
                     for (int iA = 0; iA < par->num_A; iA++)
                     {
                         int idx = index::single(t, iA, par);
@@ -465,9 +465,9 @@ namespace single
 
     void solve_couple_to_single(int t, sol_struct *sol, par_struct *par)
     {
-#pragma omp parallel num_threads(par->threads)
+        #pragma omp parallel num_threads(par->threads)
         {
-#pragma omp for
+            #pragma omp for
             for (int iA = 0; iA < par->num_A; iA++)
             {
                 int idx = index::single(t, iA, par);
@@ -532,7 +532,7 @@ namespace single
         int idx_couple = index::couple(t, 0, 0, 0, par);
         double Vstc = tools::_interp_3d(par->grid_power, par->grid_love, par->grid_A,
                                         par->num_power, par->num_love, par->num_A,
-                                        &V_single_to_couple[idx_couple], power, love, A_tot,
+                                        &V_single_to_couple[idx_couple], power, love, A_tot, 
                                         iP, iL_couple, iA_couple);
 
         // surplus
@@ -662,9 +662,9 @@ namespace single
 
     void expected_value_start_single(int t, sol_struct *sol, par_struct *par)
     {
-#pragma omp parallel num_threads(par->threads)
+        #pragma omp parallel num_threads(par->threads)
         { // a. Loop over states
-#pragma omp for
+            #pragma omp for
             for (int iA = 0; iA < par->num_A; iA++)
             {
                 // a.1 Value conditional on meeting partner

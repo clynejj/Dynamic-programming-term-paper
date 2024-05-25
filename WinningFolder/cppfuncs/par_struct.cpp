@@ -71,6 +71,9 @@ typedef struct par_struct {
     double wage_K_1;
     double wage_K_2;
     double delta;
+    double* kw_grid;
+    double* km_grid;
+    double p_birth;
 } par_struct;
 
 double get_double_par_struct(par_struct* x, char* name) {
@@ -102,6 +105,7 @@ double get_double_par_struct(par_struct* x, char* name) {
     else if (strcmp(name, "wage_K_1") == 0) { return x->wage_K_1; }
     else if (strcmp(name, "wage_K_2") == 0) { return x->wage_K_2; }
     else if (strcmp(name, "delta") == 0) { return x->delta; }
+    else if (strcmp(name, "p_birth") == 0) { return x->p_birth; }
     else { return NAN; }
 }
 
@@ -154,6 +158,8 @@ double* get_double_p_par_struct(par_struct* x, char* name){
  else if( strcmp(name,"prob_partner_love") == 0 ){ return x->prob_partner_love; }
  else if( strcmp(name,"cdf_partner_Aw") == 0 ){ return x->cdf_partner_Aw; }
  else if( strcmp(name,"cdf_partner_Am") == 0 ){ return x->cdf_partner_Am; }
+ else if( strcmp(name,"kw_grid") == 0) { return x->kw_grid; }
+ else if( strcmp(name,"km_grid") == 0) { return x->km_grid; }
  else {return NULL;}
 
 }
