@@ -192,9 +192,10 @@ class HouseholdModelClass(EconModelClass):
 
         #adding pre-computation for hours
         shape_pre = (par.num_power,par.num_Htot)
-        sol.pre_Htot_Hw = np.nan + np.ones(shape_pre)
-        sol.pre_Htot_Hm = np.nan + np.ones(shape_pre)
-        
+        sol.pre_Htot_Hw_kid = np.nan + np.ones(shape_pre)
+        sol.pre_Htot_Hm_kid = np.nan + np.ones(shape_pre)
+        sol.pre_Htot_Hw_nokid = np.nan + np.ones(shape_pre)
+        sol.pre_Htot_Hm_nokid = np.nan + np.ones(shape_pre)
         
         # simulation
         shape_sim = (par.simN,par.simT)
@@ -264,8 +265,12 @@ class HouseholdModelClass(EconModelClass):
             par.grid_shock_love,par.grid_weight_love = quadrature.normal_gauss_hermite(par.sigma_love,par.num_shock_love)
 
         # pre-computation
-        par.grid_Ctot = nonlinspace(1.0e-6,par.max_Ctot,par.num_Ctot,1.1)
-        par.grid_Htot = nonlinspace(1.0e-6,par.max_Htot,par.num_Htot,1.1)
+        #par.grid_Ctot = nonlinspace(1.0e-6,par.max_Ctot,par.num_Ctot,1.1)
+        #par.grid_Htot = nonlinspace(1.0e-6,par.max_Htot,par.num_Htot,1.1)
+        # Adjust non-linear spacing to avoid very small values
+        par.epsilon = 1e-5
+        par.grid_Ctot = nonlinspace(par.epsilon, par.max_Ctot, par.num_Ctot, 1.1)
+        par.grid_Htot = nonlinspace(par.epsilon, par.max_Htot, par.num_Htot, 1.1)
 
        
 
@@ -279,8 +284,20 @@ class HouseholdModelClass(EconModelClass):
         # precompute the optimal intra-temporal consumption allocation for couples given total consumption
         for iP,power in enumerate(par.grid_power):
             for i,C_tot in enumerate(par.grid_Ctot):
-                sol.pre_Ctot_Cw_priv[iP,i], sol.pre_Ctot_Cm_priv[iP,i], sol.pre_Ctot_C_pub[iP,i] = solve_intraperiod_couple(C_tot,power,par)
-
+                kids = 0 # kids don't matter for consumption allocation
+                sol.pre_Ctot_Cw_priv[iP,i], sol.pre_Ctot_Cm_priv[iP,i], sol.pre_Ctot_C_pub[iP,i] = solve_intraperiod_couple(C_tot,power,kids,par) # kids don't matter for consumption allocation
+                #print(f"sol.pre_Ctot_Cw_priv: {sol.pre_Ctot_Cw_priv[iP,i]}, sol.pre_Ctot_Cm_priv: {sol.pre_Ctot_Cm_priv[iP,i]}, sol.pre_Ctot_C_pub: {sol.pre_Ctot_C_pub[iP,i]}")
+        #precompute the optimal intra-temporal hours allocation for singles given total hours
+        for iP,power in enumerate(par.grid_power):
+            for i,H_tot in enumerate(par.grid_Htot):
+                kids = 0
+                sol.pre_Htot_Hw_kid[iP,i], sol.pre_Htot_Hm_kid[iP,i] = solve_intraperiod_couple_hours(H_tot,power,kids,par)
+                kids = 1
+                sol.pre_Htot_Hw_nokid[iP,i], sol.pre_Htot_Hm_nokid[iP,i] = solve_intraperiod_couple_hours(H_tot,power,kids,par)
+                #print(f"sol.pre_Htot_Hw_kid: {sol.pre_Htot_Hw_kid[iP,i]}")
+                #print(f"sol.pre_Htot_Hm_kid: {sol.pre_Htot_Hm_kid[iP,i]}")
+                #print(f"sol.pre_Htot_Hw_nokid: {sol.pre_Htot_Hw_nokid[iP,i]}")
+                #print(f"sol.pre_Htot_Hm_nokid: {sol.pre_Htot_Hm_nokid[iP,i]}")
         # loop backwards
         for t in reversed(range(par.T)):
             self.solve_single(t)
@@ -347,9 +364,9 @@ class HouseholdModelClass(EconModelClass):
                                 sol.Hm_single[idx] = res.x[0]
                                 sol.Vm_single[idx] = -res.fun
 
-                            print(f"C_w: {sol.Cw_priv_single[idx]}")
-                            print(f"Hw: {sol.Hw_single[idx]}")
-                            print(f"Vw: {sol.Vw_single[idx]}")
+                            #print(f"C_w: {sol.Cw_priv_single[idx]}")
+                            #print(f"Hw: {sol.Hw_single[idx]}")
+                            #print(f"Vw: {sol.Vw_single[idx]}")
                             
                         else:  # earlier periods
                             # search over optimal total consumption, C
@@ -407,10 +424,8 @@ class HouseholdModelClass(EconModelClass):
                         for iKw, Kw in enumerate(par.kw_grid):
                             for iKm, Km in enumerate(par.km_grid):
                                 
-                                #M_resources = resources_couple(A,par, K1, K2)  remove this!
-
                                 starting_val = None
-                                for iP,power in enumerate(par.grid_power): # looop over different power levels!
+                                for iP,power in enumerate(par.grid_power): # loop over different power levels!
                                     # continuation values
                                     if t<(par.T-1):
                                         Vw_next = self.sol.Vw_couple[t+1,iP]
@@ -419,6 +434,7 @@ class HouseholdModelClass(EconModelClass):
                                     # starting values
                                     if iP>0:
                                         C_tot_last = remain_Cw_priv[iP-1] + remain_Cm_priv[iP-1] + remain_C_pub[iP-1]
+                                        print(f"C_tot_last: {C_tot_last}")
                                         starting_val = np.array([C_tot_last])
                                 
                                 # solve problem if remaining married
@@ -428,15 +444,16 @@ class HouseholdModelClass(EconModelClass):
                                 print(f"remain_Cw = {remain_Cw_priv[iP]}, remain_Cm = {remain_Cm_priv[iP]}, remain_Cpub = {remain_C_pub[iP]}, remain_Hw = {remain_Hw[iP]}, remain_Hm = {remain_Hm[iP]}, remain_Vw = {remain_Vw[iP]}, remain_Vm = {remain_Vm[iP]}")
                                 print(np.shape(remain_Vw[iP]))
                                 # check the participation constraints - this applies the limited commitment bargaining scheme 
-                                idx_single = (t, iN, iA, iKw)  # index with children and HC - how to handle men and women?
+                                idx_single_woman = (t, iN, iA, iKw)  # index with children and HC - how to handle men and women?
+                                idx_single_man = (t, iN, iA, iKm)
                                 idx_couple = lambda iP: (t,iN,iP,iL,iA,iKw,iKm)
 
-                                list_start_as_couple = (sol.Vw_couple,sol.Vm_couple,sol.Cw_priv_couple,sol.Cm_priv_couple,sol.C_pub_couple)
-                                list_remain_couple = (remain_Vw,remain_Vm,remain_Cw_priv,remain_Cm_priv,remain_C_pub)
-                                list_trans_to_single = (sol.Vw_single,sol.Vm_single,sol.Cw_priv_single,sol.Cm_priv_single,sol.Cw_pub_single) # last input here not important in case of divorce
+                                list_start_as_couple = (sol.Vw_couple,sol.Vm_couple,sol.Cw_priv_couple,sol.Cm_priv_couple,sol.C_pub_couple, sol.Hw_couple, sol.Hm_couple)
+                                list_remain_couple = (remain_Vw,remain_Vm,remain_Cw_priv,remain_Cm_priv,remain_C_pub, remain_Hw, remain_Hm)
+                                list_trans_to_single = (sol.Vw_single,sol.Vm_single,sol.Cw_priv_single,sol.Cm_priv_single,sol.Cw_pub_single, sol.Hm_single, sol.Hw_single) # last input here not important in case of divorce
 
-                                Sw = remain_Vw - sol.Vw_single[idx_single] 
-                                Sm = remain_Vm - sol.Vm_single[idx_single] 
+                                Sw = remain_Vw - sol.Vw_single[idx_single_woman] 
+                                Sm = remain_Vm - sol.Vm_single[idx_single_man] 
                             
                                 check_participation_constraints(sol.power_idx,sol.power,Sw,Sm,idx_single,idx_couple,list_start_as_couple,list_remain_couple,list_trans_to_single, par)
 
@@ -459,7 +476,7 @@ class HouseholdModelClass(EconModelClass):
         print(f"Inputs - C_tot: {C_tot}, H_tot: {H_tot}, t: {t}, assets: {assets}, Kw: {Kw}, Km: {Km}, iL: {iL}, iP: {iP}, power: {power}, kids: {kids}")
         # Current utility from consumption allocation
         Cw_priv, Cm_priv, C_pub = intraperiod_allocation(C_tot, iP, sol, par)
-        Hw, Hm = intraperiod_allocation_hours(H_tot, iP, sol, par)
+        Hw, Hm = intraperiod_allocation_hours(H_tot, iP, sol, kids, par)
         print(f"Cw_priv: {Cw_priv}, Cm_priv: {Cm_priv}, C_pub: {C_pub}, Hw: {Hw}, Hm: {Hm}")
         Vw = usr.util(Cw_priv, C_pub, Hw, woman, kids, par, love)
         Vm = usr.util(Cm_priv, C_pub, Hm, man, kids, par, love)
@@ -688,7 +705,7 @@ class HouseholdModelClass(EconModelClass):
                     sol_C_tot = sol.C_tot_couple[t,power_idx] 
                     C_tot = linear_interp.interp_2d(par.grid_love,par.grid_A,sol_C_tot,love,A_lag)
 
-                    sim.Cw_priv[i,t], sim.Cm_priv[i,t], C_pub = intraperiod_allocation(C_tot,power_idx,sol,par)
+                    sim.Cw_priv[i,t], sim.Cm_priv[i,t], C_pub = intraperiod_allocation(C_tot,power_idx,sol,par) #check this!
                     sim.Cw_pub[i,t] = C_pub
                     sim.Cm_pub[i,t] = C_pub
 
@@ -749,30 +766,6 @@ def intraperiod_allocation_single(C_tot,gender,par):
     C_pub = C_tot - C_priv
     return C_priv,C_pub
 
-def intraperiod_allocation_chatGPT(C_tot, iP, sol, par):
-    print(f"Entering intraperiod_allocation with C_tot: {C_tot}, iP: {iP}")
-    
-    # Check if iP is within valid range
-    if iP < 0 or iP >= len(sol.pre_Ctot_Cw_priv):
-        print(f"iP out of range: {iP}")
-        return np.nan, np.nan, np.nan
-
-    # Check the interpolation grids and values
-    print(f"par.grid_Ctot: {par.grid_Ctot}")
-    print(f"sol.pre_Ctot_Cw_priv[iP]: {sol.pre_Ctot_Cw_priv[iP]}")
-    print(f"sol.pre_Ctot_Cm_priv[iP]: {sol.pre_Ctot_Cm_priv[iP]}")
-
-    try:
-        Cw_priv = interp_1d(par.grid_Ctot, sol.pre_Ctot_Cw_priv[iP], C_tot)
-        Cm_priv = interp_1d(par.grid_Ctot, sol.pre_Ctot_Cm_priv[iP], C_tot)
-    except Exception as e:
-        print(f"Interpolation error: {e}")
-        Cw_priv, Cm_priv = np.nan, np.nan
-
-    C_pub = C_tot - Cw_priv - Cm_priv
-
-    print(f"intraperiod returns: Cw_priv: {Cw_priv}, Cm_priv: {Cm_priv}, C_pub: {C_pub}")
-    return Cw_priv, Cm_priv, C_pub
 
 def intraperiod_allocation(C_tot,iP,sol,par):
     print(f"Entering intraperiod_allocation with C_tot: {C_tot}, iP: {iP}")
@@ -791,21 +784,74 @@ def intraperiod_allocation(C_tot,iP,sol,par):
     print(f"Cw_priv: {Cw_priv}, Cm_priv: {Cm_priv}, C_pub: {C_pub}")
     return Cw_priv, Cm_priv, C_pub
 
-def intraperiod_allocation_hours(H_tot,iP,sol,par):
-    
-    # interpolate pre-computed solution
-    #j1 = binary_search(0,par.num_Htot,par.grid_Htot,H_tot)
-    Hw = interp_1d(par.grid_Htot,sol.pre_Htot_Hw[iP],H_tot)
-    Hm = interp_1d(par.grid_Htot,sol.pre_Htot_Hm[iP],H_tot)
-
+def intraperiod_allocation_hours(H_tot,iP,sol,kids,par):
+    if kids == 0:
+        # interpolate pre-computed solution
+        #j1 = binary_search(0,par.num_Htot,par.grid_Htot,H_tot)
+        Hw = interp_1d(par.grid_Htot,sol.pre_Htot_Hw_nokid[iP],H_tot)
+        Hm = interp_1d(par.grid_Htot,sol.pre_Htot_Hm_nokid[iP],H_tot)
+    else:
+        # interpolate pre-computed solution
+        #j1 = binary_search(0,par.num_Htot,par.grid_Htot,H_tot)
+        Hw = interp_1d(par.grid_Htot,sol.pre_Htot_Hw_kid[iP],H_tot)
+        Hm = interp_1d(par.grid_Htot,sol.pre_Htot_Hm_kid[iP],H_tot)
     return Hw, Hm
 
-def solve_intraperiod_couple(C_tot,power,par,starting_val=None):
+def solve_intraperiod_couple(C_tot, power, kids, par, hours_woman=0.0, hours_man=0.0, starting_val=None):
+    
+    # setup estimation. Impose constraint that C_tot = Cw+Cm+C
+    bounds = optimize.Bounds([0, 0], [C_tot, C_tot], keep_feasible=True)
+    
+    obj = lambda x: - (power * usr.util(x[0], C_tot - np.sum(x), hours_woman, woman, kids, par) + (1.0 - power) * usr.util(x[1], C_tot - np.sum(x), hours_man, man, kids, par))
+
+    # estimate
+    x0 = np.array([C_tot / 3, C_tot / 3]) if starting_val is None else starting_val
+    
+    try:
+        res = optimize.minimize(obj, x0, bounds=bounds)
+    except ValueError as e:
+        print(f"Optimization failed: {e}")
+        return np.nan, np.nan, np.nan
+
+    if not np.isfinite(res.x).all() or np.iscomplex(res.x).any():
+        return np.nan, np.nan, np.nan
+
+    # unpack
+    Cw_priv = np.real(res.x[0])
+    Cm_priv = np.real(res.x[1])
+    C_pub = np.real(C_tot - np.sum(res.x))
+    
+    return Cw_priv, Cm_priv, C_pub
+
+
+def solve_intraperiod_couple_hours(H_tot, power, kids, par):
+    # Define a small positive value to avoid zero
+    epsilon = 1e-5
+
+    # Ensure valid bounds
+    if H_tot <= 2 * epsilon:
+        epsilon = H_tot / 3
+    # setup estimation. Impose constraint that H_tot = Hw + Hm
+    bounds = optimize.Bounds([epsilon, epsilon], [H_tot, H_tot], keep_feasible=True)
+    
+    obj = lambda x: - (power * usr.util(0.5, 0.5, x[0], woman, kids, par) + (1.0 - power) * usr.util(0.5, 0.5, H_tot - x[0], man, kids,par))
+
+    # estimate
+    x0 = np.array([H_tot / 2, H_tot / 2]) # intial guess, how about a starting value?
+    res = optimize.minimize(obj, x0, bounds=bounds)
+    #unpack
+    Hw = res.x[0]
+    Hm = H_tot - Hw
+    return Hw, Hm
+
+def solve_intraperiod_couple_old(C_tot,power,kids,par,starting_val=None):
     
     # setup estimation. Impose constraint that C_tot = Cw+Cm+C
     bounds = optimize.Bounds(0.0, C_tot, keep_feasible=True)
-    obj = lambda x: - (power*usr.util(x[0],C_tot-np.sum(x),woman,par) + (1.0-power)*usr.util(x[1],C_tot-np.sum(x),man,par))
+    hours = 0.0 # hours are not relevant for the consumption allocation
+    obj = lambda x: - (power*usr.util(x[0],C_tot-np.sum(x),hours,woman,kids,par) + (1.0-power)*usr.util(x[1],C_tot-np.sum(x),hours,man,kids,par))
     
+
     # estimate
     x0 = np.array([C_tot/3,C_tot/3]) if starting_val is None else starting_val
     res = optimize.minimize(obj,x0,bounds=bounds)
