@@ -333,7 +333,9 @@ class HouseholdModelClass(EconModelClass):
                 list_start_as_couple = (sol.Vw_couple,sol.Vm_couple,sol.Cw_priv_couple,sol.Cm_priv_couple,sol.C_pub_couple)
                 list_remain_couple = (remain_Vw,remain_Vm,remain_Cw_priv,remain_Cm_priv,remain_C_pub)
                 list_trans_to_single = (sol.Vw_single,sol.Vm_single,sol.Cw_priv_single,sol.Cm_priv_single,sol.Cw_pub_single) # last input here not important in case of divorce
-                
+                print(f"list_start_as_couple: {list_start_as_couple}")
+                print(f"list_remain_couple: {list_remain_couple}")
+
                 Sw = remain_Vw - sol.Vw_single[idx_single] 
                 Sm = remain_Vm - sol.Vm_single[idx_single] 
                 
