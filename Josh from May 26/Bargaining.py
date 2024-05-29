@@ -935,7 +935,7 @@ def solve_intraperiod_couple_old(C_tot,power,kids,par,starting_val=None):
     return Cw_priv,Cm_priv,C_pub
 
 
-def check_participation_constraints(power_idx, power, Sw, Sm, idx_single_woman, idx_single_man, idx_couple, list_couple, list_raw, list_single, par):
+def check_participation_constraints_other(power_idx, power, Sw, Sm, idx_single_woman, idx_single_man, idx_couple, list_couple, list_raw, list_single, par):
     # Check the participation constraints. Array
     min_Sw = np.min(Sw)
     min_Sm = np.min(Sm)
@@ -946,6 +946,7 @@ def check_participation_constraints(power_idx, power, Sw, Sm, idx_single_woman, 
         for iP in range(par.num_power):
             # Overwrite output for couple
             idx = idx_couple(iP)
+            print(f"idx: {idx}")
             for i in range(len(list_couple)):
                 list_couple[i][idx] = list_raw[i][iP]
 
@@ -997,7 +998,9 @@ def check_participation_constraints(power_idx, power, Sw, Sm, idx_single_woman, 
                 if Sm_at_zero_w > 0:
                     for i in range(len(list_couple)):
                         if iP == 0:
-                            list_couple[i][idx] = interp_1d(par.grid_power, list_raw[i], power_at_zero_w, Low_w - 1)
+                            print(f"interpolating at list_raw[i]: {list_raw[i]}")
+                            print(f'par.grid_power: {par.grid_power}')
+                            list_couple[i][idx] = interp_1d(par.grid_power, list_raw[i], power_at_zero_w) #, Low_w - 1)
                         else:
                             list_couple[i][idx] = list_couple[i][idx_couple(0)]
 
@@ -1040,7 +1043,7 @@ def check_participation_constraints(power_idx, power, Sw, Sm, idx_single_woman, 
 
 
 
-def check_participation_constraints_old(power_idx, power, Sw, Sm, idx_single_woman, idx_single_man, idx_couple, list_couple, list_raw, list_single, par):
+def check_participation_constraints(power_idx, power, Sw, Sm, idx_single_woman, idx_single_man, idx_couple, list_couple, list_raw, list_single, par):
     
     # check the participation constraints. Array
     min_Sw = np.min(Sw)
@@ -1113,7 +1116,7 @@ def check_participation_constraints_old(power_idx, power, Sw, Sm, idx_single_wom
 
                     for i, key in enumerate(list_couple):
                         if iP==0:
-                            list_couple[i][idx] = interp_1d(par.grid_power, list_raw[i], power_at_zero_w, Low_w-1) 
+                            list_couple[i][idx] = interp_1d(par.grid_power, list_raw[i], power_at_zero_w)#, Low_w-1) 
                         else:
                             list_couple[i][idx] = list_couple[i][idx_couple(0)]; # re-use that the interpolated values are identical
 
