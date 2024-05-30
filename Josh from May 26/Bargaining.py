@@ -446,8 +446,8 @@ class HouseholdModelClass(EconModelClass):
                                 # Solve problem if remaining married
                                 remain_Cw_priv[iP], remain_Cm_priv[iP], remain_C_pub[iP], remain_Hw[iP], remain_Hm[iP], remain_Vw[iP], remain_Vm[iP] = self.solve_remain_couple(
                                     t, A, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids, starting_val=starting_val)
-                                print(f"remain_Cw = {remain_Cw_priv[iP]}, remain_Cm = {remain_Cm_priv[iP]}, remain_Cpub = {remain_C_pub[iP]}, remain_Hw = {remain_Hw[iP]}, remain_Hm = {remain_Hm[iP]}, remain_Vw = {remain_Vw[iP]}, remain_Vm = {remain_Vm[iP]}")
-                                print(np.shape(remain_Vw[iP]))
+                                #print(f"remain_Cw = {remain_Cw_priv[iP]}, remain_Cm = {remain_Cm_priv[iP]}, remain_Cpub = {remain_C_pub[iP]}, remain_Hw = {remain_Hw[iP]}, remain_Hm = {remain_Hm[iP]}, remain_Vw = {remain_Vw[iP]}, remain_Vm = {remain_Vm[iP]}")
+                                #print(np.shape(remain_Vw[iP]))
 
                                 # Check the participation constraints - this applies the limited commitment bargaining scheme
                                 idx_single_woman = (t, iN, iA, iKw)  # Index with children and HC - how to handle men and women?
@@ -460,9 +460,9 @@ class HouseholdModelClass(EconModelClass):
 
                                 Sw = remain_Vw - sol.Vw_single[idx_single_woman]
                                 Sm = remain_Vm - sol.Vm_single[idx_single_man]
-                                print(f"Sw: {Sw}, Sm: {Sm}")
-                                print(f"shape of Sw: {np.shape(Sw)}")
-                                print(f"shape of Sm: {np.shape(Sm)}")
+                                #print(f"Sw: {Sw}, Sm: {Sm}")
+                                #print(f"shape of Sw: {np.shape(Sw)}")
+                                #print(f"shape of Sm: {np.shape(Sm)}")
                                 check_participation_constraints(sol.power_idx, sol.power, Sw, Sm, idx_single_woman, idx_single_man, idx_couple, list_start_as_couple, list_remain_couple, list_trans_to_single, par)
 
                                 # Save remain values
@@ -477,67 +477,7 @@ class HouseholdModelClass(EconModelClass):
                                     sol.Vm_remain_couple[idx] = remain_Vm[iP]
 
 
-    def solve_couple_old(self,t):
-            par = self.par
-            sol = self.sol
-
-            remain_Vw,remain_Vm,remain_Cw_priv,remain_Cm_priv,remain_C_pub = np.ones(par.num_power),np.ones(par.num_power),np.ones(par.num_power),np.ones(par.num_power),np.ones(par.num_power)
-            remain_Hw, remain_Hm = np.ones(par.num_power), np.ones(par.num_power)  # For storing hours worked
-
-            Vw_next = None
-            Vm_next = None
-            for iN, kids in enumerate(par.nw_grid):
-                for iL,love in enumerate(par.grid_love):
-                    for iA,A in enumerate(par.grid_A): # add human capital state variable!
-                        for iKw, Kw in enumerate(par.kw_grid):
-                            for iKm, Km in enumerate(par.km_grid):
-                                
-                                starting_val = None
-                                for iP,power in enumerate(par.grid_power): # loop over different power levels!
-                                    # continuation values
-                                    if t<(par.T-1):
-                                        Vw_next = self.sol.Vw_couple[t+1,iP]
-                                        Vm_next = self.sol.Vm_couple[t+1,iP]
-
-                                    # starting values
-                                    if iP>0:
-                                        C_tot_last = remain_Cw_priv[iP-1] + remain_Cm_priv[iP-1] + remain_C_pub[iP-1]
-                                        print(f"C_tot_last: {C_tot_last}")
-                                        starting_val = np.array([C_tot_last])
-                                
-                                # solve problem if remaining married
-                                #print inputs to value_of_choice_couple:
-                                #print(f"t = {t}, A = {A}, Kw = {Kw}, Km = {Km}, iL = {iL}, iP = {iP}, power = {power}, Vw_next = {Vw_next}, Vm_next = {Vm_next}, kids = {kids}")
-                                remain_Cw_priv[iP], remain_Cm_priv[iP], remain_C_pub[iP], remain_Hw[iP], remain_Hm[iP], remain_Vw[iP], remain_Vm[iP]  = self.solve_remain_couple(t,A,Kw,Km,iL,iP,power,Vw_next,Vm_next,kids,starting_val=starting_val)
-                                print(f"remain_Cw = {remain_Cw_priv[iP]}, remain_Cm = {remain_Cm_priv[iP]}, remain_Cpub = {remain_C_pub[iP]}, remain_Hw = {remain_Hw[iP]}, remain_Hm = {remain_Hm[iP]}, remain_Vw = {remain_Vw[iP]}, remain_Vm = {remain_Vm[iP]}")
-                                print(np.shape(remain_Vw[iP]))
-                                # check the participation constraints - this applies the limited commitment bargaining scheme 
-                                idx_single_woman = (t, iN, iA, iKw)  # index with children and HC - how to handle men and women?
-                                idx_single_man = (t, iN, iA, iKm)
-                                idx_couple = lambda iP: (t,iN,iP,iL,iA,iKw,iKm)
-
-                                list_start_as_couple = (sol.Vw_couple,sol.Vm_couple,sol.Cw_priv_couple,sol.Cm_priv_couple,sol.C_pub_couple, sol.Hw_couple, sol.Hm_couple)
-                                list_remain_couple = (remain_Vw,remain_Vm,remain_Cw_priv,remain_Cm_priv,remain_C_pub, remain_Hw, remain_Hm)
-                                list_trans_to_single = (sol.Vw_single,sol.Vm_single,sol.Cw_priv_single,sol.Cm_priv_single,sol.Cw_pub_single, sol.Hm_single, sol.Hw_single) # last input here not important in case of divorce
-                               
-                                Sw = remain_Vw - sol.Vw_single[idx_single_woman] 
-                                Sm = remain_Vm - sol.Vm_single[idx_single_man] 
-                                print(f"Sw: {Sw}, Sm: {Sm}")
-                                print(f"shape of Sw: {np.shape(Sw)}")
-                                print(f"shape of Sm: {np.shape(Sm)}")
-                                check_participation_constraints(sol.power_idx,sol.power,Sw,Sm,idx_single_woman,idx_single_man,idx_couple,list_start_as_couple,list_remain_couple,list_trans_to_single, par)
-
-                                # save remain values
-                                for iP,power in enumerate(par.grid_power): # looop over different power levels!
-                                    idx = (t,iP,iL,iA)
-                                    sol.Cw_priv_remain_couple[idx] = remain_Cw_priv[iP] 
-                                    sol.Cm_priv_remain_couple[idx] = remain_Cm_priv[iP]
-                                    sol.C_pub_remain_couple[idx] = remain_C_pub[iP]
-                                    sol.Hw_remain_couple[idx] = remain_Hw[iP]
-                                    sol.Hm_remain_couple[idx] = remain_Hm[iP]
-                                    sol.Vw_remain_couple[idx] = remain_Vw[iP]
-                                    sol.Vm_remain_couple[idx] = remain_Vm[iP]
-                            
+    
 
 
     def value_of_choice_couple(self, C_tot, H_tot, t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids):
