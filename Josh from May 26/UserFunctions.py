@@ -54,7 +54,7 @@ def util(c_priv, c_pub, hours, gender, kids, par, love=0.0):
         else:
             utility = ((term1 + term2) ** (1.0 - rho)) / (1.0 - rho) - util_hours + love
     except (ZeroDivisionError, ValueError):
-        utility = -np.inf  # Return a very low utility if the calculation fails
+        utility = -10000000  # Return a very low utility if the calculation fails
 
     #print(f"utility={utility}")
     return utility

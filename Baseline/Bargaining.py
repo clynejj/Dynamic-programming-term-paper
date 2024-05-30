@@ -661,6 +661,8 @@ def check_participation_constraints(power_idx,power,Sw,Sm,idx_single,idx_couple,
                 else: # divorce
 
                     for i,key in enumerate(list_couple):
+                        print(f"list_single[{i}].shape: {np.shape(list_single[i])}, idx_single: {idx_single}, idx: {idx}")
+                        print(f"list_couple[{i}].shape: {np.shape(list_couple[i])}, idx_couple(Low_w): {idx_couple(Low_w)}")
                         list_couple[i][idx] = list_single[i][idx_single]
 
                     power_idx[idx] = -1
