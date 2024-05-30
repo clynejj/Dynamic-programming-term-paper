@@ -65,7 +65,7 @@ class HouseholdModelClass(EconModelClass):
         par.T = 10
         
         # wealth
-        par.num_A = 5
+        par.num_A = 20
         par.max_A = 10.0
         
         # human capital 
@@ -154,7 +154,7 @@ class HouseholdModelClass(EconModelClass):
         sol.Hm_trans_single = np.nan + np.ones(shape_single)
 
         # couples
-        shape_couple = (par.T, par.num_power, par.num_love, par.num_A, par.num_k, par.num_k, par.num_n)
+        shape_couple = (par.T,par.num_power,par.num_love,par.num_A, par.num_k, par.num_k, par.num_n)
         sol.Vw_couple = np.nan + np.ones(shape_couple)
         sol.Vm_couple = np.nan + np.ones(shape_couple)
         
@@ -175,7 +175,7 @@ class HouseholdModelClass(EconModelClass):
         sol.Hw_remain_couple = np.nan + np.ones(shape_couple)
         sol.Hm_remain_couple = np.nan + np.ones(shape_couple)
 
-        sol.power_idx = np.zeros(shape_couple, dtype=np.int_)
+        sol.power_idx = np.zeros(shape_couple,dtype=np.int_)
         sol.power = np.zeros(shape_couple)
 
         # temporary containers
@@ -183,21 +183,22 @@ class HouseholdModelClass(EconModelClass):
         sol.Vw_plus_vec = np.zeros(par.num_shock_love) 
         sol.Vm_plus_vec = np.zeros(par.num_shock_love) 
 
+
         # pre-compute optimal consumption allocation 
-        shape_pre = (par.num_power, par.num_Ctot)
+        shape_pre = (par.num_power,par.num_Ctot)
         sol.pre_Ctot_Cw_priv = np.nan + np.ones(shape_pre)
         sol.pre_Ctot_Cm_priv = np.nan + np.ones(shape_pre)
         sol.pre_Ctot_C_pub = np.nan + np.ones(shape_pre)
 
-        # adding pre-computation for hours
-        shape_pre = (par.num_power, par.num_Htot)
+        #adding pre-computation for hours
+        shape_pre = (par.num_power,par.num_Htot)
         sol.pre_Htot_Hw_kid = np.nan + np.ones(shape_pre)
         sol.pre_Htot_Hm_kid = np.nan + np.ones(shape_pre)
         sol.pre_Htot_Hw_nokid = np.nan + np.ones(shape_pre)
         sol.pre_Htot_Hm_nokid = np.nan + np.ones(shape_pre)
         
         # simulation
-        shape_sim = (par.simN, par.simT)
+        shape_sim = (par.simN,par.simT)
         sim.Cw_priv = np.nan + np.ones(shape_sim)
         sim.Cm_priv = np.nan + np.ones(shape_sim)
         sim.Cw_pub = np.nan + np.ones(shape_sim)
@@ -210,7 +211,7 @@ class HouseholdModelClass(EconModelClass):
         sim.Aw = np.nan + np.ones(shape_sim)
         sim.Am = np.nan + np.ones(shape_sim)
         sim.couple = np.nan + np.ones(shape_sim)
-        sim.power_idx = np.ones(shape_sim, dtype=np.int_)
+        sim.power_idx = np.ones(shape_sim,dtype=np.int_)
         sim.power = np.nan + np.ones(shape_sim)
         sim.love = np.nan + np.ones(shape_sim)
 
@@ -220,49 +221,53 @@ class HouseholdModelClass(EconModelClass):
 
         # initial distribution
         sim.init_A = par.grid_A[0] + np.zeros(par.simN)
-        sim.init_Aw = par.div_A_share * sim.init_A
-        sim.init_Am = (1.0 - par.div_A_share) * sim.init_A
-        sim.init_couple = np.ones(par.simN, dtype=np.bool_)
-        sim.init_power_idx = par.num_power // 2 * np.ones(par.simN, dtype=np.int_)
+        sim.init_Aw = par.div_A_share * sim.init_A #np.zeros(par.simN)
+        sim.init_Am = (1.0 - par.div_A_share) * sim.init_A #np.zeros(par.simN)
+        sim.init_couple = np.ones(par.simN,dtype=np.bool_)
+        sim.init_power_idx = par.num_power//2 * np.ones(par.simN,dtype=np.int_)
         sim.init_love = np.zeros(par.simN)
-
         
     def setup_grids(self):
         par = self.par
         
-        # wealth
-        par.grid_A = nonlinspace(0.0, par.max_A, par.num_A, 1.1)
+        # wealth. Single grids are such to avoid interpolation
+        par.grid_A = nonlinspace(0.0,par.max_A,par.num_A,1.1)
+
         par.grid_Aw = par.div_A_share * par.grid_A
         par.grid_Am = (1.0 - par.div_A_share) * par.grid_A
 
         # human capital grid
-        par.kw_grid = nonlinspace(0.0, par.k_max, par.num_k, 1.1)
-        par.km_grid = nonlinspace(0.0, par.k_max, par.num_k, 1.1)
+        par.kw_grid = nonlinspace(0.0,par.k_max,par.num_k,1.1)
+        par.km_grid = nonlinspace(0.0,par.k_max,par.num_k,1.1)
 
         # number of children grid
-        par.nw_grid = np.arange(0, par.num_n)
-        par.nm_grid = np.arange(0, par.num_n)
+        par.nw_grid = np.arange(0,par.num_n)
+        par.nm_grid = np.arange(0,par.num_n)
 
-        # power grid
-        odd_num = np.mod(par.num_power, 2)
-        first_part = nonlinspace(0.0, 0.5, (par.num_power + odd_num) // 2, 1.3)
-        last_part = np.flip(1.0 - nonlinspace(0.0, 0.5, (par.num_power - odd_num) // 2 + 1, 1.3))[1:]
-        par.grid_power = np.append(first_part, last_part)
 
-        # love grid
-        if par.num_love > 1:
-            par.grid_love = np.linspace(-par.max_love, par.max_love, par.num_love)
+        # power. non-linear grid with more mass in both tails.
+        odd_num = np.mod(par.num_power,2)
+        first_part = nonlinspace(0.0,0.5,(par.num_power+odd_num)//2,1.3)
+        last_part = np.flip(1.0 - nonlinspace(0.0,0.5,(par.num_power-odd_num)//2 + 1,1.3))[1:]
+        par.grid_power = np.append(first_part,last_part)
+
+        # love grid and shock
+        if par.num_love>1:
+            par.grid_love = np.linspace(-par.max_love,par.max_love,par.num_love)
         else:
             par.grid_love = np.array([0.0])
 
-        # love shock grid
-        if par.sigma_love <= 1.0e-6:
+        if par.sigma_love<=1.0e-6:
             par.num_shock_love = 1
-            par.grid_shock_love, par.grid_weight_love = np.array([0.0]), np.array([1.0])
-        else:
-            par.grid_shock_love, par.grid_weight_love = quadrature.normal_gauss_hermite(par.sigma_love, par.num_shock_love)
+            par.grid_shock_love,par.grid_weight_love = np.array([0.0]),np.array([1.0])
 
-        # pre-computation grids
+        else:
+            par.grid_shock_love,par.grid_weight_love = quadrature.normal_gauss_hermite(par.sigma_love,par.num_shock_love)
+
+        # pre-computation
+        #par.grid_Ctot = nonlinspace(1.0e-6,par.max_Ctot,par.num_Ctot,1.1)
+        #par.grid_Htot = nonlinspace(1.0e-6,par.max_Htot,par.num_Htot,1.1)
+        # Adjust non-linear spacing to avoid very small values
         par.epsilon = 1e-5
         par.grid_Ctot = nonlinspace(par.epsilon, par.max_Ctot, par.num_Ctot, 1.1)
         par.grid_Htot = nonlinspace(par.epsilon, par.max_Htot, par.num_Htot, 1.1)
@@ -1034,123 +1039,127 @@ def check_participation_constraints_other(power_idx, power, Sw, Sm, idx_single_w
 
 
 def check_participation_constraints(power_idx, power, Sw, Sm, idx_single_woman, idx_single_man, idx_couple, list_couple, list_raw, list_single, par):
-    # Debug: Print shapes and indices
-    print(f"idx_single_woman: {idx_single_woman}, idx_single_man: {idx_single_man}")
-    print(f"power_idx shape: {power_idx.shape}, power shape: {power.shape}")
-    print(f"list_couple shapes: {[arr.shape for arr in list_couple]}")
-    print(f"list_raw shapes: {[arr.shape for arr in list_raw]}")
-    print(f"list_single shapes: {[arr.shape for arr in list_single]}")
-
-    # Ensure indices do not exceed dimensions
-    def clamp_idx(idx, shape):
-        return tuple(min(idx[i], shape[i] - 1) for i in range(len(idx)))
-
-    idx_single_woman = clamp_idx(idx_single_woman, list_single[0].shape)
-    idx_single_man = clamp_idx(idx_single_man, list_single[0].shape)
-
-    # Check the participation constraints. Array
+    
+    # check the participation constraints. Array
     min_Sw = np.min(Sw)
     min_Sm = np.min(Sm)
     max_Sw = np.max(Sw)
     max_Sm = np.max(Sm)
 
-    if (min_Sw >= 0.0) & (min_Sm >= 0.0):  # All values are consistent with marriage
+    if (min_Sw >= 0.0) & (min_Sm >= 0.0): # all values are consistent with marriage
         for iP in range(par.num_power):
             idx = idx_couple(iP)
-            for i in range(len(list_couple)):
+            for i, key in enumerate(list_couple):
                 list_couple[i][idx] = list_raw[i][iP]
+
             if all(x < s for x, s in zip(idx, power_idx.shape)):
                 power_idx[idx] = iP
                 power[idx] = par.grid_power[iP]
 
-    elif (max_Sw < 0.0) | (max_Sm < 0.0):  # No value is consistent with marriage
+    elif (max_Sw < 0.0) | (max_Sm < 0.0): # no value is consistent with marriage
         for iP in range(par.num_power):
             idx = idx_couple(iP)
-            for i in range(len(list_couple)):
-                if i % 2 == 0:  # Women-related data
-                    list_couple[i][idx] = list_single[i][idx_single_woman]
-                else:  # Men-related data
-                    list_couple[i][idx] = list_single[i][idx_single_man]
+            for i, key in enumerate(list_couple):
+                # Debugging prints
+                #print(f"Checking list_couple[{i}][{idx}] and list_single[{i}][{idx_single_woman}]")
+                #print(f"Shapes: list_couple[{i}].shape = {list_couple[i].shape}, list_single[{i}].shape = {list_single[i].shape}")
+                #print(f"indices: idx_single_woman = {idx_single_woman}, idx_single_man = {idx_single_man}, idx = {idx}")
+                
+                # Ensure indices are within valid range
+                if isinstance(idx_single_woman, tuple) and isinstance(idx, tuple):
+                    if all(x < s for x, s in zip(idx_single_woman, list_single[i].shape)) and all(x < s for x, s in zip(idx, list_couple[i].shape)):
+                        list_couple[i][idx] = list_single[i][idx_single_woman]
+                    if all(x < s for x, s in zip(idx_single_man, list_single[i].shape)) and all(x < s for x, s in zip(idx, list_couple[i].shape)):
+                        list_couple[i][idx] = list_single[i][idx_single_man]
 
             if all(x < s for x, s in zip(idx, power_idx.shape)):
                 power_idx[idx] = -1
                 power[idx] = -1.0
 
-    else:
-        # Find lowest (highest) value with positive surplus for women (men)
-        Low_w = 1  # In case there is no crossing, this will be the correct value
-        Low_m = par.num_power - 1 - 1  # In case there is no crossing, this will be the correct value
-        for iP in range(par.num_power - 1):
-            if (Sw[iP] < 0) & (Sw[iP + 1] >= 0):
-                Low_w = iP + 1
-
-            if (Sm[iP] >= 0) & (Sm[iP + 1] < 0):
+    else: 
+    
+        # find lowest (highest) value with positive surplus for women (men)
+        Low_w = 1 #0 # in case there is no crossing, this will be the correct value
+        Low_m = par.num_power-1-1 #par.num_power-1 # in case there is no crossing, this will be the correct value
+        for iP in range(par.num_power-1):
+            if (Sw[iP]<0) & (Sw[iP+1]>=0):
+                Low_w = iP+1
+                
+            if (Sm[iP]>=0) & (Sm[iP+1]<0):
                 Low_m = iP
 
-        # Interpolate the surplus of each member at indifference points
-        id = Low_w - 1
-        denom = (par.grid_power[id + 1] - par.grid_power[id])
-        ratio_w = (Sw[id + 1] - Sw[id]) / denom
-        ratio_m = (Sm[id + 1] - Sm[id]) / denom
-        power_at_zero_w = par.grid_power[id] - Sw[id] / ratio_w
-        Sm_at_zero_w = Sm[id] + ratio_m * (power_at_zero_w - par.grid_power[id])
+        # b. interpolate the surplus of each member at indifference points
+        # women indifference
+        id = Low_w-1
+        denom = (par.grid_power[id+1] - par.grid_power[id])
+        ratio_w = (Sw[id+1] - Sw[id])/denom
+        ratio_m = (Sm[id+1] - Sm[id])/denom
+        power_at_zero_w = par.grid_power[id] - Sw[id]/ratio_w
+        Sm_at_zero_w = Sm[id] + ratio_m*( power_at_zero_w - par.grid_power[id] )
 
+        # men indifference
         id = Low_m
-        denom = (par.grid_power[id + 1] - par.grid_power[id])
-        ratio_w = (Sw[id + 1] - Sw[id]) / denom
-        ratio_m = (Sm[id + 1] - Sm[id]) / denom
-        power_at_zero_m = par.grid_power[id] - Sm[id] / ratio_m
-        Sw_at_zero_m = Sw[id] + ratio_w * (power_at_zero_m - par.grid_power[id])
+        denom = (par.grid_power[id+1] - par.grid_power[id])
+        ratio_w = (Sw[id+1] - Sw[id])/denom
+        ratio_m = (Sm[id+1] - Sm[id])/denom
+        power_at_zero_m = par.grid_power[id] - Sm[id]/ratio_m
+        Sw_at_zero_m = Sw[id] + ratio_w*( power_at_zero_m - par.grid_power[id] )
 
+        # update the outcomes
         for iP in range(par.num_power):
             idx = idx_couple(iP)
-            if iP < Low_w:
-                if Sm_at_zero_w > 0:
-                    for i in range(len(list_couple)):
+    
+            # woman wants to leave
+            if iP < Low_w: 
+                if Sm_at_zero_w > 0: # man happy to shift some bargaining power
+                    for i, key in enumerate(list_couple):
                         if iP == 0:
-                            list_couple[i][idx] = interp_1d(par.grid_power, list_raw[i], power_at_zero_w) #, Low_w - 1)
+                            list_couple[i][idx] = interp_1d(par.grid_power, list_raw[i], power_at_zero_w)#, Low_w-1) 
                         else:
-                            list_couple[i][idx] = list_couple[i][idx_couple(0)]
+                            list_couple[i][idx] = list_couple[i][idx_couple(0)]; # re-use that the interpolated values are identical
 
-                    power_idx[idx] = Low_w
-                    power[idx] = power_at_zero_w
-                else:
-                    for i in range(len(list_couple)):
-                        if i % 2 == 0:  # Women-related data
-                            list_couple[i][idx] = list_single[i][idx_single_woman]
-                        else:  # Men-related data
-                            list_couple[i][idx] = list_single[i][idx_single_man]
-
-                    power_idx[idx] = -1
-                    power[idx] = -1.0
-            elif iP > Low_m:
-                if Sw_at_zero_m > 0:
-                    for i in range(len(list_couple)):
-                        if iP == (Low_m + 1):
-                            list_couple[i][idx] = interp_1d(par.grid_power, list_raw[i], power_at_zero_m, Low_m)
+                    if all(x < s for x, s in zip(idx, power_idx.shape)):
+                        power_idx[idx] = Low_w
+                        power[idx] = power_at_zero_w
+                    
+                else: # divorce
+                    for i, key in enumerate(list_couple):
+                        list_couple[i][idx] = list_single[i][idx_single_woman]
+                        list_couple[i][idx] = list_single[i][idx_single_man]
+                    
+                    if all(x < s for x, s in zip(idx, power_idx.shape)):
+                        power_idx[idx] = -1
+                        power[idx] = -1.0
+                
+            # man wants to leave
+            elif iP > Low_m: 
+                if Sw_at_zero_m > 0: # woman happy to shift some bargaining power
+                    for i, key in enumerate(list_couple):
+                        if (iP == Low_m + 1):
+                            list_couple[i][idx] = interp_1d(par.grid_power, list_raw[i], power_at_zero_m, Low_m) 
                         else:
-                            list_couple[i][idx] = list_couple[i][idx_couple(Low_m + 1)]
+                            list_couple[i][idx] = list_couple[i][idx_couple(Low_m + 1)]; # re-use that the interpolated values are identical
 
-                    power_idx[idx] = Low_m
-                    power[idx] = power_at_zero_m
-                else:
-                    for i in range(len(list_couple)):
-                        if i % 2 == 0:  # Women-related data
-                            list_couple[i][idx] = list_single[i][idx_single_woman]
-                        else:  # Men-related data
-                            list_couple[i][idx] = list_single[i][idx_single_man]
+                    if all(x < s for x, s in zip(idx, power_idx.shape)):
+                        power_idx[idx] = Low_m
+                        power[idx] = power_at_zero_m
+                    
+                else: # divorce
+                    for i, key in enumerate(list_couple):
+                        list_couple[i][idx] = list_single[i][idx_single_woman]
+                        list_couple[i][idx] = list_single[i][idx_single_man]
 
-                    power_idx[idx] = -1
-                    power[idx] = -1.0
-            else:
-                for i in range(len(list_couple)):
+                    if all(x < s for x, s in zip(idx, power_idx.shape)):
+                        power_idx[idx] = -1
+                        power[idx] = -1.0
+
+            else: # no-one wants to leave
+                for i, key in enumerate(list_couple):
                     list_couple[i][idx] = list_raw[i][iP]
 
-                power_idx[idx] = iP
-                power[idx] = par.grid_power[iP]
-
-
-
+                if all(x < s for x, s in zip(idx, power_idx.shape)):
+                    power_idx[idx] = iP
+                    power[idx] = par.grid_power[iP]
 
 
 
