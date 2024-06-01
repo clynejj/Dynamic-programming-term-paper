@@ -309,6 +309,11 @@ class HouseholdModelClass(EconModelClass):
         sol.Cw_tot_single = sol.Cw_priv_single + sol.Cw_pub_single
         sol.Cm_tot_single = sol.Cm_priv_single + sol.Cm_pub_single
 
+        # total hours
+        sol.H_tot_couple = sol.Hw_couple + sol.Hm_couple
+        sol.H_tot_remain_couple = sol.Hw_remain_couple + sol.Hm_remain_couple
+
+
         # value of transitioning to singlehood. Done here because absorbing . it is the same as entering period as single.
         sol.Vw_trans_single = sol.Vw_single.copy()
         sol.Vm_trans_single = sol.Vm_single.copy()
@@ -432,7 +437,12 @@ class HouseholdModelClass(EconModelClass):
                     for iKw, Kw in enumerate(par.kw_grid):
                         for iKm, Km in enumerate(par.km_grid):
                             starting_val = None
+<<<<<<< HEAD:Josh from May 26/Bargaining.py
+                            starting_val_hours = None  # Initialize starting_val_hours
+                            for iP, power in enumerate(par.grid_power):  # Loop over different power levels!
+=======
                             for iP, power in enumerate(par.grid_power):
+>>>>>>> cd8ec5505cdae4995b423eaafe8499c09018394f:WinningFolder/bargaining 30_5/Bargaining copy.py
                                 # Continuation values
                                 if t < (par.T - 1):
                                     Vw_next = self.sol.Vw_couple[t + 1, iP]
@@ -442,10 +452,19 @@ class HouseholdModelClass(EconModelClass):
                                 if iP > 0:
                                     C_tot_last = remain_Cw_priv[iP - 1] + remain_Cm_priv[iP - 1] + remain_C_pub[iP - 1]
                                     starting_val = np.array([C_tot_last])
+                                    #add a starting value for hours
+                                    H_tot_last = remain_Hw[iP - 1] + remain_Hm[iP - 1]
+                                    starting_val_hours = np.array([H_tot_last]) 
 
                                 # Solve problem if remaining married
                                 remain_Cw_priv[iP], remain_Cm_priv[iP], remain_C_pub[iP], remain_Hw[iP], remain_Hm[iP], remain_Vw[iP], remain_Vm[iP] = self.solve_remain_couple(
+<<<<<<< HEAD:Josh from May 26/Bargaining.py
+                                    t, A, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids, starting_val=starting_val, starting_val_hours=starting_val_hours)
+                                #print(f"remain_Cw = {remain_Cw_priv[iP]}, remain_Cm = {remain_Cm_priv[iP]}, remain_Cpub = {remain_C_pub[iP]}, remain_Hw = {remain_Hw[iP]}, remain_Hm = {remain_Hm[iP]}, remain_Vw = {remain_Vw[iP]}, remain_Vm = {remain_Vm[iP]}")
+                                #print(np.shape(remain_Vw[iP]))
+=======
                                     t, A, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids, starting_val=starting_val)
+>>>>>>> cd8ec5505cdae4995b423eaafe8499c09018394f:WinningFolder/bargaining 30_5/Bargaining copy.py
 
                                 # Increment the solution count
                                 solution_count += 1
@@ -603,7 +622,7 @@ class HouseholdModelClass(EconModelClass):
         return Val, Cw_priv, Cm_priv, C_pub, Hw, Hm, Vw, Vm
 
 
-    def solve_remain_couple(self,t,assets,Kw,Km,iL,iP,power,Vw_next,Vm_next,kids,starting_val = None):
+    def solve_remain_couple(self,t,assets,Kw,Km,iL,iP,power,Vw_next,Vm_next,kids,starting_val = None, starting_val_hours = None):
         par = self.par
 
         if t==(par.T-1): # Terminal period
@@ -611,7 +630,7 @@ class HouseholdModelClass(EconModelClass):
             C_tot = assets
             # Objective function only for working hours optimization
             obj = lambda x: - self.value_of_choice_couple(C_tot, x[0], t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids)[0]
-            x0 = np.array([0.4]) if starting_val is None else starting_val  # initial guess for H_tot
+            x0 = np.array([0.4]) if starting_val is None else starting_val_hours  # initial guess for H_tot
 
             # Optimize for working hours
             res = optimize.minimize(obj, x0, bounds=((1.0e-6, np.inf),), method='SLSQP')
@@ -620,7 +639,10 @@ class HouseholdModelClass(EconModelClass):
             # objective function
             obj = lambda x: - self.value_of_choice_couple(x[0],x[1],t,assets,Kw, Km,iL,iP,power,Vw_next,Vm_next,kids)[0]
             x0 = np.array([0.4, 0.4]) if starting_val is None else starting_val #initial guess [C_tot, H_tot]
-
+            # Initial guess
+            C_tot_guess = 0.4 if starting_val is None else starting_val
+            H_tot_guess = 0.4 if starting_val_hours is None else starting_val_hours
+            x0 = np.array([C_tot_guess, H_tot_guess])
             # optimize
             res = optimize.minimize(obj,x0,bounds=((1.0e-6, np.inf),(1.0e-6, np.inf)) ,method='SLSQP') 
             C_tot = res.x[0]
@@ -909,6 +931,8 @@ def solve_intraperiod_couple_hours(H_tot, power, kids, par):
     Hm = H_tot - Hw
     return Hw, Hm
 
+<<<<<<< HEAD:Josh from May 26/Bargaining.py
+=======
 def solve_intraperiod_couple_old(C_tot,power,kids,par,starting_val=None):
     
     # setup estimation. Impose constraint that C_tot = Cw+Cm+C
@@ -1038,6 +1062,7 @@ def check_participation_constraints_other(power_idx, power, Sw, Sm, idx_single_w
 
 
 
+>>>>>>> cd8ec5505cdae4995b423eaafe8499c09018394f:WinningFolder/bargaining 30_5/Bargaining copy.py
 def check_participation_constraints(power_idx, power, Sw, Sm, idx_single_woman, idx_single_man, idx_couple, list_couple, list_raw, list_single, par):
     
     # check the participation constraints. Array
@@ -1055,6 +1080,136 @@ def check_participation_constraints(power_idx, power, Sw, Sm, idx_single_woman, 
             if all(x < s for x, s in zip(idx, power_idx.shape)):
                 power_idx[idx] = iP
                 power[idx] = par.grid_power[iP]
+<<<<<<< HEAD:Josh from May 26/Bargaining.py
+
+    elif (max_Sw < 0.0) | (max_Sm < 0.0): # no value is consistent with marriage
+        for iP in range(par.num_power):
+            idx = idx_couple(iP)
+            for i, key in enumerate(list_couple):
+                # Debugging prints
+                #print(f"Checking list_couple[{i}][{idx}] and list_single[{i}][{idx_single_woman}]")
+                #print(f"Shapes: list_couple[{i}].shape = {list_couple[i].shape}, list_single[{i}].shape = {list_single[i].shape}")
+                #print(f"indices: idx_single_woman = {idx_single_woman}, idx_single_man = {idx_single_man}, idx = {idx}")
+                
+                # Ensure indices are within valid range
+                if isinstance(idx_single_woman, tuple) and isinstance(idx, tuple):
+                    if all(x < s for x, s in zip(idx_single_woman, list_single[i].shape)) and all(x < s for x, s in zip(idx, list_couple[i].shape)):
+                        list_couple[i][idx] = list_single[i][idx_single_woman]
+                    if all(x < s for x, s in zip(idx_single_man, list_single[i].shape)) and all(x < s for x, s in zip(idx, list_couple[i].shape)):
+                        list_couple[i][idx] = list_single[i][idx_single_man]
+
+            if all(x < s for x, s in zip(idx, power_idx.shape)):
+                power_idx[idx] = -1
+                power[idx] = -1.0
+
+    else: 
+    
+        # find lowest (highest) value with positive surplus for women (men)
+        Low_w = 1 #0 # in case there is no crossing, this will be the correct value
+        Low_m = par.num_power-1-1 #par.num_power-1 # in case there is no crossing, this will be the correct value
+        for iP in range(par.num_power-1):
+            if (Sw[iP]<0) & (Sw[iP+1]>=0):
+                Low_w = iP+1
+                
+            if (Sm[iP]>=0) & (Sm[iP+1]<0):
+                Low_m = iP
+
+        # b. interpolate the surplus of each member at indifference points
+        # women indifference
+        id = Low_w-1
+        denom = (par.grid_power[id+1] - par.grid_power[id])
+        ratio_w = (Sw[id+1] - Sw[id])/denom
+        ratio_m = (Sm[id+1] - Sm[id])/denom
+        power_at_zero_w = par.grid_power[id] - Sw[id]/ratio_w
+        Sm_at_zero_w = Sm[id] + ratio_m*( power_at_zero_w - par.grid_power[id] )
+
+        # men indifference
+        id = Low_m
+        denom = (par.grid_power[id+1] - par.grid_power[id])
+        ratio_w = (Sw[id+1] - Sw[id])/denom
+        ratio_m = (Sm[id+1] - Sm[id])/denom
+        power_at_zero_m = par.grid_power[id] - Sm[id]/ratio_m
+        Sw_at_zero_m = Sw[id] + ratio_w*( power_at_zero_m - par.grid_power[id] )
+
+        # update the outcomes
+        for iP in range(par.num_power):
+            idx = idx_couple(iP)
+    
+            # woman wants to leave
+            if iP < Low_w: 
+                if Sm_at_zero_w > 0: # man happy to shift some bargaining power
+                    for i, key in enumerate(list_couple):
+                        if iP == 0:
+                            list_couple[i][idx] = interp_1d(par.grid_power, list_raw[i], power_at_zero_w)#, Low_w-1) 
+                        else:
+                            list_couple[i][idx] = list_couple[i][idx_couple(0)]; # re-use that the interpolated values are identical
+
+                    if all(x < s for x, s in zip(idx, power_idx.shape)):
+                        power_idx[idx] = Low_w
+                        power[idx] = power_at_zero_w
+                    
+                else: # divorce
+                    for i, key in enumerate(list_couple):
+                        list_couple[i][idx] = list_single[i][idx_single_woman]
+                        list_couple[i][idx] = list_single[i][idx_single_man]
+                    
+                    if all(x < s for x, s in zip(idx, power_idx.shape)):
+                        power_idx[idx] = -1
+                        power[idx] = -1.0
+                
+            # man wants to leave
+            elif iP > Low_m: 
+                if Sw_at_zero_m > 0: # woman happy to shift some bargaining power
+                    for i, key in enumerate(list_couple):
+                        if (iP == Low_m + 1):
+                            list_couple[i][idx] = interp_1d(par.grid_power, list_raw[i], power_at_zero_m, Low_m) 
+                        else:
+                            list_couple[i][idx] = list_couple[i][idx_couple(Low_m + 1)]; # re-use that the interpolated values are identical
+
+                    if all(x < s for x, s in zip(idx, power_idx.shape)):
+                        power_idx[idx] = Low_m
+                        power[idx] = power_at_zero_m
+                    
+                else: # divorce
+                    for i, key in enumerate(list_couple):
+                        list_couple[i][idx] = list_single[i][idx_single_woman]
+                        list_couple[i][idx] = list_single[i][idx_single_man]
+
+                    if all(x < s for x, s in zip(idx, power_idx.shape)):
+                        power_idx[idx] = -1
+                        power[idx] = -1.0
+
+            else: # no-one wants to leave
+                for i, key in enumerate(list_couple):
+                    list_couple[i][idx] = list_raw[i][iP]
+
+                if all(x < s for x, s in zip(idx, power_idx.shape)):
+                    power_idx[idx] = iP
+                    power[idx] = par.grid_power[iP]
+
+
+def check_participation_constraints_other(power_idx, power, Sw, Sm, idx_single_woman, idx_single_man, idx_couple, list_couple, list_raw, list_single, par):
+    
+    # check the participation constraints. Array
+    min_Sw = np.min(Sw)
+    min_Sm = np.min(Sm)
+    max_Sw = np.max(Sw)
+    max_Sm = np.max(Sm)
+
+    if (min_Sw >= 0.0) & (min_Sm >= 0.0): # all values are consistent with marriage
+        for iP in range(par.num_power):
+            idx = idx_couple(iP)
+            for i, key in enumerate(list_couple):
+                list_couple[i][idx] = list_raw[i][iP]
+
+            if all(x < s for x, s in zip(idx, power_idx.shape)):
+                power_idx[idx] = iP
+                power[idx] = par.grid_power[iP]
+            if all(x < s for x, s in zip(idx, power_idx.shape)):
+                power_idx[idx] = iP
+                power[idx] = par.grid_power[iP]
+=======
+>>>>>>> cd8ec5505cdae4995b423eaafe8499c09018394f:WinningFolder/bargaining 30_5/Bargaining copy.py
 
     elif (max_Sw < 0.0) | (max_Sm < 0.0): # no value is consistent with marriage
         for iP in range(par.num_power):
