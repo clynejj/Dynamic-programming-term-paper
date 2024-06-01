@@ -431,21 +431,27 @@ class HouseholdModelClass(EconModelClass):
                 for iA, A in enumerate(par.grid_A):
                     for iKw, Kw in enumerate(par.kw_grid):
                         for iKm, Km in enumerate(par.km_grid):
+
                             starting_val = None
+                            starting_val_hours = None  # Initialize starting_val_hours
                             for iP, power in enumerate(par.grid_power):
                                 # Continuation values
                                 if t < (par.T - 1):
                                     Vw_next = self.sol.Vw_couple[t + 1, iP]
                                     Vm_next = self.sol.Vm_couple[t + 1, iP]
 
+                               
                                 # Starting values
                                 if iP > 0:
                                     C_tot_last = remain_Cw_priv[iP - 1] + remain_Cm_priv[iP - 1] + remain_C_pub[iP - 1]
+                                    #print(f"C_tot_last: {C_tot_last}")
                                     starting_val = np.array([C_tot_last])
-
+                                    #add a starting value for hours
+                                    H_tot_last = remain_Hw[iP - 1] + remain_Hm[iP - 1]
+                                    starting_val_hours = np.array([H_tot_last]) 
                                 # Solve problem if remaining married
                                 remain_Cw_priv[iP], remain_Cm_priv[iP], remain_C_pub[iP], remain_Hw[iP], remain_Hm[iP], remain_Vw[iP], remain_Vm[iP] = self.solve_remain_couple(
-                                    t, A, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids, starting_val=starting_val)
+                                    t, A, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids, starting_val=starting_val, starting_val_hours=starting_val_hours)
 
                                 # Increment the solution count
                                 solution_count += 1
@@ -603,7 +609,7 @@ class HouseholdModelClass(EconModelClass):
         return Val, Cw_priv, Cm_priv, C_pub, Hw, Hm, Vw, Vm
 
 
-    def solve_remain_couple(self,t,assets,Kw,Km,iL,iP,power,Vw_next,Vm_next,kids,starting_val = None):
+    def solve_remain_couple(self,t,assets,Kw,Km,iL,iP,power,Vw_next,Vm_next,kids,starting_val = None, startting_val_hours = None):
         par = self.par
 
         if t==(par.T-1): # Terminal period
@@ -611,7 +617,7 @@ class HouseholdModelClass(EconModelClass):
             C_tot = assets
             # Objective function only for working hours optimization
             obj = lambda x: - self.value_of_choice_couple(C_tot, x[0], t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids)[0]
-            x0 = np.array([0.4]) if starting_val is None else starting_val  # initial guess for H_tot
+            x0 = np.array([0.4]) if starting_val is None else startting_val_hours  # initial guess for H_tot
 
             # Optimize for working hours
             res = optimize.minimize(obj, x0, bounds=((1.0e-6, np.inf),), method='SLSQP')
@@ -619,7 +625,10 @@ class HouseholdModelClass(EconModelClass):
         else:
             # objective function
             obj = lambda x: - self.value_of_choice_couple(x[0],x[1],t,assets,Kw, Km,iL,iP,power,Vw_next,Vm_next,kids)[0]
-            x0 = np.array([0.4, 0.4]) if starting_val is None else starting_val #initial guess [C_tot, H_tot]
+            # Initial guess
+            C_tot_guess = 0.4 if starting_val is None else starting_val
+            H_tot_guess = 0.4 if starting_val_hours is None else starting_val_hours
+            x0 = np.array([C_tot_guess, H_tot_guess])
 
             # optimize
             res = optimize.minimize(obj,x0,bounds=((1.0e-6, np.inf),(1.0e-6, np.inf)) ,method='SLSQP') 

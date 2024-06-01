@@ -587,7 +587,7 @@ class HouseholdModelClass(EconModelClass):
             print(f"kids: {type(kids)}, {kids.shape}")
             # objective function
             obj = lambda x: - self.value_of_choice_couple(x[0],x[1],t,assets,Kw, Km,iL,iP,power,Vw_next,Vm_next,kids)[0]
-            x0 = np.array([0.4, 0.4]) if starting_val is None else starting_val #initial guess [C_tot, H_tot]
+            #x0 = np.array([0.4, 0.4]) if starting_val is None else starting_val #initial guess [C_tot, H_tot]
             # Initial guess
             C_tot_guess = 0.4 if starting_val is None else starting_val
             H_tot_guess = 0.4 if starting_val_hours is None else starting_val_hours
