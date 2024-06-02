@@ -455,7 +455,7 @@ class HouseholdModelClass(EconModelClass):
 
                                 # Increment the solution count
                                 solution_count += 1
-                                print(f"Solution {solution_count} for couple at t={t}, kids={kids}, love={love}, A={A}, Kw={Kw}, Km={Km}, power={power} generated.")
+                                #print(f"Solution {solution_count} for couple at t={t}, kids={kids}, love={love}, A={A}, Kw={Kw}, Km={Km}, power={power} generated.")
 
                                 # Check the participation constraints
                                 idx_single_woman = (t, iN, iA, iKw)  # Index with children and HC - how to handle men and women?
@@ -609,7 +609,7 @@ class HouseholdModelClass(EconModelClass):
         return Val, Cw_priv, Cm_priv, C_pub, Hw, Hm, Vw, Vm
 
 
-    def solve_remain_couple(self,t,assets,Kw,Km,iL,iP,power,Vw_next,Vm_next,kids,starting_val = None, startting_val_hours = None):
+    def solve_remain_couple(self,t,assets,Kw,Km,iL,iP,power,Vw_next,Vm_next,kids,starting_val = None, starting_val_hours = None):
         par = self.par
 
         if t==(par.T-1): # Terminal period
@@ -617,7 +617,7 @@ class HouseholdModelClass(EconModelClass):
             C_tot = assets
             # Objective function only for working hours optimization
             obj = lambda x: - self.value_of_choice_couple(C_tot, x[0], t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids)[0]
-            x0 = np.array([0.4]) if starting_val is None else startting_val_hours  # initial guess for H_tot
+            x0 = np.array([0.4]) if starting_val is None else starting_val_hours  # initial guess for H_tot
 
             # Optimize for working hours
             res = optimize.minimize(obj, x0, bounds=((1.0e-6, np.inf),), method='SLSQP')
