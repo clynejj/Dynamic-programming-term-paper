@@ -4,8 +4,12 @@ import scipy.optimize as optimize
 from EconModel import EconModelClass
 from consav.grids import nonlinspace
 from consav.linear_interp import interp_1d, interp_2d, interp_3d, interp_2d_vec, binary_search, interp_3d_vec
+from consav.linear_interp_1d import _interp_1d
+from consav import linear_interp
 from consav import quadrature
 from scipy.optimize import minimize,  NonlinearConstraint
+
+from consav.linear_interp_5d import interp_5d
 
 # user-specified functions
 import UserFunctions as usr
@@ -65,11 +69,11 @@ class HouseholdModelClass(EconModelClass):
         par.T = 10
         
         # wealth
-        par.num_A = 3
+        par.num_A = 4
         par.max_A = 10.0
         
         # human capital 
-        par.num_H = 5
+        par.num_H = 4
         par.max_H = 5.0
 
         # income
@@ -87,19 +91,19 @@ class HouseholdModelClass(EconModelClass):
         par.cond_high = -0.1
 
         # bargaining power
-        par.num_power = 20
+        par.num_power = 4
 
         # love/match quality
-        par.num_love = 5
+        par.num_love = 4
         par.max_love = 1.0
 
         par.sigma_love = 0.1
-        par.num_shock_love = 5
+        par.num_shock_love = 3
 
         # pre-computation
-        par.num_Ctot = 100
+        par.num_Ctot = 4
         par.max_Ctot = par.max_A*2
-        par.num_Htot = 100
+        par.num_Htot = 4
         par.max_Htot = par.max_A*2
 
         par.num_A_pd = par.num_A * 2
@@ -111,7 +115,7 @@ class HouseholdModelClass(EconModelClass):
 
         # grids        
         par.k_max = 20.0 # maximum point in HC grid
-        par.num_k = 15 #30 # number of grid points in HC grid
+        par.num_k = 4 #30 # number of grid points in HC grid
         par.num_n = 2 # maximum number in my grid over children
 
         #interest rate
@@ -180,6 +184,9 @@ class HouseholdModelClass(EconModelClass):
 
         # temporary containers
         sol.savings_vec = np.zeros(par.num_shock_love)
+        sol.a_next_vec = np.zeros(par.num_shock_love)
+        sol.k_next_woman_vec = np.zeros(par.num_shock_love)
+        sol.k_next_man_vec = np.zeros(par.num_shock_love)
         sol.Vw_plus_vec = np.zeros(par.num_shock_love) 
         sol.Vm_plus_vec = np.zeros(par.num_shock_love) 
 
@@ -210,6 +217,10 @@ class HouseholdModelClass(EconModelClass):
         sim.A = np.nan + np.ones(shape_sim)
         sim.Aw = np.nan + np.ones(shape_sim)
         sim.Am = np.nan + np.ones(shape_sim)
+        sim.kw = np.nan + np.ones(shape_sim)
+        sim.km = np.nan + np.ones(shape_sim)
+        sim.nw = np.nan + np.ones(shape_sim)
+        sim.nm = np.nan + np.ones(shape_sim)
         sim.couple = np.nan + np.ones(shape_sim)
         sim.power_idx = np.ones(shape_sim,dtype=np.int_)
         sim.power = np.nan + np.ones(shape_sim)
@@ -223,6 +234,8 @@ class HouseholdModelClass(EconModelClass):
         sim.init_A = par.grid_A[0] + np.zeros(par.simN)
         sim.init_Aw = par.div_A_share * sim.init_A #np.zeros(par.simN)
         sim.init_Am = (1.0 - par.div_A_share) * sim.init_A #np.zeros(par.simN)
+        sim.init_kw = par.kw_grid[0] + np.zeros(par.simN)
+        sim.init_km = par.km_grid[0] + np.zeros(par.simN)
         sim.init_couple = np.ones(par.simN,dtype=np.bool_)
         sim.init_power_idx = par.num_power//2 * np.ones(par.simN,dtype=np.int_)
         sim.init_love = np.zeros(par.simN)
@@ -231,43 +244,37 @@ class HouseholdModelClass(EconModelClass):
         par = self.par
         
         # wealth. Single grids are such to avoid interpolation
-        par.grid_A = nonlinspace(0.0,par.max_A,par.num_A,1.1)
-
+        par.grid_A = nonlinspace(0.0, par.max_A, par.num_A, 1.1)
         par.grid_Aw = par.div_A_share * par.grid_A
         par.grid_Am = (1.0 - par.div_A_share) * par.grid_A
 
         # human capital grid
-        par.kw_grid = nonlinspace(0.0,par.k_max,par.num_k,1.1)
-        par.km_grid = nonlinspace(0.0,par.k_max,par.num_k,1.1)
+        par.kw_grid = nonlinspace(0.0, par.k_max, par.num_k, 1.1)
+        par.km_grid = nonlinspace(0.0, par.k_max, par.num_k, 1.1)
 
         # number of children grid
-        par.nw_grid = np.arange(0,par.num_n)
-        par.nm_grid = np.arange(0,par.num_n)
-
+        par.nw_grid = np.arange(0, par.num_n)
+        par.nm_grid = np.arange(0, par.num_n)
 
         # power. non-linear grid with more mass in both tails.
-        odd_num = np.mod(par.num_power,2)
-        first_part = nonlinspace(0.0,0.5,(par.num_power+odd_num)//2,1.3)
-        last_part = np.flip(1.0 - nonlinspace(0.0,0.5,(par.num_power-odd_num)//2 + 1,1.3))[1:]
-        par.grid_power = np.append(first_part,last_part)
+        odd_num = np.mod(par.num_power, 2)
+        first_part = nonlinspace(0.0, 0.5, (par.num_power + odd_num) // 2, 1.3)
+        last_part = np.flip(1.0 - nonlinspace(0.0, 0.5, (par.num_power - odd_num) // 2 + 1, 1.3))[1:]
+        par.grid_power = np.append(first_part, last_part)
 
         # love grid and shock
-        if par.num_love>1:
-            par.grid_love = np.linspace(-par.max_love,par.max_love,par.num_love)
+        if par.num_love > 1:
+            par.grid_love = np.linspace(-par.max_love, par.max_love, par.num_love)
         else:
             par.grid_love = np.array([0.0])
 
-        if par.sigma_love<=1.0e-6:
+        if par.sigma_love <= 1.0e-6:
             par.num_shock_love = 1
-            par.grid_shock_love,par.grid_weight_love = np.array([0.0]),np.array([1.0])
-
+            par.grid_shock_love, par.grid_weight_love = np.array([0.0]), np.array([1.0])
         else:
-            par.grid_shock_love,par.grid_weight_love = quadrature.normal_gauss_hermite(par.sigma_love,par.num_shock_love)
+            par.grid_shock_love, par.grid_weight_love = quadrature.normal_gauss_hermite(par.sigma_love, par.num_shock_love)
 
         # pre-computation
-        #par.grid_Ctot = nonlinspace(1.0e-6,par.max_Ctot,par.num_Ctot,1.1)
-        #par.grid_Htot = nonlinspace(1.0e-6,par.max_Htot,par.num_Htot,1.1)
-        # Adjust non-linear spacing to avoid very small values
         par.epsilon = 1e-5
         par.grid_Ctot = nonlinspace(par.epsilon, par.max_Ctot, par.num_Ctot, 1.1)
         par.grid_Htot = nonlinspace(par.epsilon, par.max_Htot, par.num_Htot, 1.1)
@@ -300,6 +307,7 @@ class HouseholdModelClass(EconModelClass):
                 #print(f"sol.pre_Htot_Hm_nokid: {sol.pre_Htot_Hm_nokid[iP,i]}")
         # loop backwards
         for t in reversed(range(par.T)):
+            print(f"t: {t}")
             self.solve_single(t)
             self.solve_couple(t)
 
@@ -308,6 +316,11 @@ class HouseholdModelClass(EconModelClass):
         sol.C_tot_remain_couple = sol.Cw_priv_remain_couple + sol.Cm_priv_remain_couple + sol.C_pub_remain_couple
         sol.Cw_tot_single = sol.Cw_priv_single + sol.Cw_pub_single
         sol.Cm_tot_single = sol.Cm_priv_single + sol.Cm_pub_single
+
+        # total hours
+        sol.H_tot_couple = sol.Hw_couple + sol.Hm_couple
+        sol.H_tot_remain_couple = sol.Hw_remain_couple + sol.Hm_remain_couple
+
 
         # value of transitioning to singlehood. Done here because absorbing . it is the same as entering period as single.
         sol.Vw_trans_single = sol.Vw_single.copy()
@@ -323,7 +336,7 @@ class HouseholdModelClass(EconModelClass):
     def solve_single(self, t):
         par = self.par
         sol = self.sol
-
+        
         # loop through state variable: wealth
         for iN in range(par.num_n):  # addition of children
             for iA in range(par.num_A):  
@@ -338,6 +351,7 @@ class HouseholdModelClass(EconModelClass):
                         kids = par.nw_grid[iN] if gender == 'woman' else par.nm_grid[iN]
                         K = par.kw_grid[iK] if gender == 'woman' else par.km_grid[iK]
                         
+
                         if t == (par.T - 1):  # terminal period
                             obj = lambda x: obj_last_single(self, x[0], A, K, gender, kids)
                             
@@ -362,6 +376,10 @@ class HouseholdModelClass(EconModelClass):
                                 sol.Cm_priv_single[idx], sol.Cm_pub_single[idx] = cons_last_single(self,res.x[0], A, K, gender)
                                 sol.Hm_single[idx] = res.x[0]
                                 sol.Vm_single[idx] = -res.fun
+
+                            #print(f"C_w: {sol.Cw_priv_single[idx]}")
+                            #print(f"Hw: {sol.Hw_single[idx]}")
+                            #print(f"Vw: {sol.Vw_single[idx]}")
                             
                         else:  # earlier periods
                             # search over optimal total consumption, C
@@ -375,9 +393,12 @@ class HouseholdModelClass(EconModelClass):
                             ub_h = np.inf 
 
                             bounds = ((lb_c, ub_c), (lb_h, ub_h))
-
+                            #print(f"bounds: {bounds}")
                             # call optimizer
                             idx_last = (t + 1, iN, iA, iK)
+                            #print(f"idx_last: {idx_last}")
+                            #print(f"sol.Cw_priv_single[idx_last]: {sol.Cw_priv_single[idx_last]}")
+                            #print(f"sol.Hw_single[idx_last]: {sol.Hw_single[idx_last]}")
                             if gender == 'woman':
                                 init = np.array([sol.Cw_priv_single[idx_last], sol.Hw_single[idx_last]])
                             else:
@@ -390,130 +411,18 @@ class HouseholdModelClass(EconModelClass):
                                 sol.Cw_priv_single[idx], sol.Cw_pub_single[idx] = intraperiod_allocation_single(res.x[0], gender, par)
                                 sol.Hw_single[idx] = res.x[1]
                                 sol.Vw_single[idx] = -res.fun
+                                #print(f"sol.Vw_single: {sol.Vw_single[idx]}")
+                                #print(f"sol.Cw_priv_single: {sol.Cw_priv_single[idx]}")
+                                #print(f"sol.Cw_pub_single: {sol.Cw_pub_single[idx]}")
+                                #print(f"sol.Hw_single: {sol.Hw_single[idx]}")
                             else:
                                 sol.Cm_priv_single[idx], sol.Cm_pub_single[idx] = intraperiod_allocation_single(res.x[0], gender, par)
                                 sol.Hm_single[idx] = res.x[1]
                                 sol.Vm_single[idx] = -res.fun
-
-
-    def solve_couple(self, t):
-        par = self.par
-        sol = self.sol
-        print(f"Solving for couples at time {t}")
-
-        # Counter for the number of solutions generated
-        solution_count = 0
-
-        remain_Vw, remain_Vm, remain_Cw_priv, remain_Cm_priv, remain_C_pub = (
-            np.ones(par.num_power), np.ones(par.num_power), np.ones(par.num_power), np.ones(par.num_power), np.ones(par.num_power))
-        remain_Hw, remain_Hm = np.ones(par.num_power), np.ones(par.num_power)  # For storing hours worked
-
-        Vw_next = None
-        Vm_next = None
-        for iN, kids in enumerate(par.nw_grid):
-            for iL, love in enumerate(par.grid_love):
-                for iA, A in enumerate(par.grid_A):
-                    for iKw, Kw in enumerate(par.kw_grid):
-                        for iKm, Km in enumerate(par.km_grid):
-                            starting_val = None
-                            for iP, power in enumerate(par.grid_power):
-                                # Continuation values
-                                if t < (par.T - 1):
-                                    Vw_next = self.sol.Vw_couple[t + 1, iP]
-                                    Vm_next = self.sol.Vm_couple[t + 1, iP]
-
-                                # Starting values
-                                if iP > 0:
-                                    C_tot_last = remain_Cw_priv[iP - 1] + remain_Cm_priv[iP - 1] + remain_C_pub[iP - 1]
-                                    starting_val = np.array([C_tot_last])
-
-                                # Solve problem if remaining married
-                                remain_Cw_priv[iP], remain_Cm_priv[iP], remain_C_pub[iP], remain_Hw[iP], remain_Hm[iP], remain_Vw[iP], remain_Vm[iP] = self.solve_remain_couple(
-                                    t, A, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids, starting_val=starting_val)
-
-                                # Increment the solution count
-                                solution_count += 1
-                                #print(f"Solution {solution_count} for couple at t={t}, kids={kids}, love={love}, A={A}, Kw={Kw}, Km={Km}, power={power} generated.")
-
-                                # Check the participation constraints
-                                idx_single_woman = (t, iN, iA, iKw)  # Index with children and HC - how to handle men and women?
-                                idx_single_man = (t, iN, iA, iKm)
-                                idx_couple = lambda iP: (t, iN, iP, iL, iA, iKw, iKm)
-
-                                list_start_as_couple = (sol.Vw_couple, sol.Vm_couple, sol.Cw_priv_couple, sol.Cm_priv_couple, sol.C_pub_couple, sol.Hw_couple, sol.Hm_couple)
-                                list_remain_couple = (remain_Vw, remain_Vm, remain_Cw_priv, remain_Cm_priv, remain_C_pub, remain_Hw, remain_Hm)
-                                list_trans_to_single = (sol.Vw_single, sol.Vm_single, sol.Cw_priv_single, sol.Cm_priv_single, sol.Cw_pub_single, sol.Hw_single, sol.Hm_single)
-
-                                Sw = remain_Vw - sol.Vw_single[idx_single_woman]
-                                Sm = remain_Vm - sol.Vm_single[idx_single_man]
-
-                                check_participation_constraints(sol.power_idx, sol.power, Sw, Sm, idx_single_woman, idx_single_man, idx_couple, list_start_as_couple, list_remain_couple, list_trans_to_single, par)
-
-        print(f"Total solutions generated for couples at time {t}: {solution_count}")
-
-
-
-    def solve_couple_old(self,t):
-            par = self.par
-            sol = self.sol
-
-            remain_Vw,remain_Vm,remain_Cw_priv,remain_Cm_priv,remain_C_pub = np.ones(par.num_power),np.ones(par.num_power),np.ones(par.num_power),np.ones(par.num_power),np.ones(par.num_power)
-            remain_Hw, remain_Hm = np.ones(par.num_power), np.ones(par.num_power)  # For storing hours worked
-
-            Vw_next = None
-            Vm_next = None
-            for iN, kids in enumerate(par.nw_grid):
-                for iL,love in enumerate(par.grid_love):
-                    for iA,A in enumerate(par.grid_A): # add human capital state variable!
-                        for iKw, Kw in enumerate(par.kw_grid):
-                            for iKm, Km in enumerate(par.km_grid):
-                                
-                                starting_val = None
-                                for iP,power in enumerate(par.grid_power): # loop over different power levels!
-                                    # continuation values
-                                    if t<(par.T-1):
-                                        Vw_next = self.sol.Vw_couple[t+1,iP]
-                                        Vm_next = self.sol.Vm_couple[t+1,iP]
-
-                                    # starting values
-                                    if iP>0:
-                                        C_tot_last = remain_Cw_priv[iP-1] + remain_Cm_priv[iP-1] + remain_C_pub[iP-1]
-                                        #print(f"C_tot_last: {C_tot_last}")
-                                        starting_val = np.array([C_tot_last])
-                                
-                                # solve problem if remaining married
-                                #print inputs to value_of_choice_couple:
-                                #print(f"t = {t}, A = {A}, Kw = {Kw}, Km = {Km}, iL = {iL}, iP = {iP}, power = {power}, Vw_next = {Vw_next}, Vm_next = {Vm_next}, kids = {kids}")
-                                remain_Cw_priv[iP], remain_Cm_priv[iP], remain_C_pub[iP], remain_Hw[iP], remain_Hm[iP], remain_Vw[iP], remain_Vm[iP]  = self.solve_remain_couple(t,A,Kw,Km,iL,iP,power,Vw_next,Vm_next,kids,starting_val=starting_val)
-                                #print(f"remain_Cw = {remain_Cw_priv[iP]}, remain_Cm = {remain_Cm_priv[iP]}, remain_Cpub = {remain_C_pub[iP]}, remain_Hw = {remain_Hw[iP]}, remain_Hm = {remain_Hm[iP]}, remain_Vw = {remain_Vw[iP]}, remain_Vm = {remain_Vm[iP]}")
-                                #print(np.shape(remain_Vw[iP]))
-                                # check the participation constraints - this applies the limited commitment bargaining scheme 
-                                idx_single_woman = (t, iN, iA, iKw)  # index with children and HC - how to handle men and women?
-                                idx_single_man = (t, iN, iA, iKm)
-                                idx_couple = lambda iP: (t,iN,iP,iL,iA,iKw,iKm)
-
-                                list_start_as_couple = (sol.Vw_couple,sol.Vm_couple,sol.Cw_priv_couple,sol.Cm_priv_couple,sol.C_pub_couple, sol.Hw_couple, sol.Hm_couple)
-                                list_remain_couple = (remain_Vw,remain_Vm,remain_Cw_priv,remain_Cm_priv,remain_C_pub, remain_Hw, remain_Hm)
-                                list_trans_to_single = (sol.Vw_single,sol.Vm_single,sol.Cw_priv_single,sol.Cm_priv_single,sol.Cw_pub_single, sol.Hm_single, sol.Hw_single) # last input here not important in case of divorce
-                               
-                                Sw = remain_Vw - sol.Vw_single[idx_single_woman] 
-                                Sm = remain_Vm - sol.Vm_single[idx_single_man] 
-                                #print(f"Sw: {Sw}, Sm: {Sm}")
-                                #print(f"shape of Sw: {np.shape(Sw)}")
-                                #print(f"shape of Sm: {np.shape(Sm)}")
-                                check_participation_constraints(sol.power_idx,sol.power,Sw,Sm,idx_single_woman,idx_single_man,idx_couple,list_start_as_couple,list_remain_couple,list_trans_to_single, par)
-
-                                # save remain values
-                                for iP,power in enumerate(par.grid_power): # looop over different power levels!
-                                    idx = (t,iP,iL,iA)
-                                    sol.Cw_priv_remain_couple[idx] = remain_Cw_priv[iP] 
-                                    sol.Cm_priv_remain_couple[idx] = remain_Cm_priv[iP]
-                                    sol.C_pub_remain_couple[idx] = remain_C_pub[iP]
-                                    sol.Hw_remain_couple[idx] = remain_Hw[iP]
-                                    sol.Hm_remain_couple[idx] = remain_Hm[iP]
-                                    sol.Vw_remain_couple[idx] = remain_Vw[iP]
-                                    sol.Vm_remain_couple[idx] = remain_Vm[iP]
-                            
+                                #print(f"sol.Vm_single: {sol.Vm_single[idx]}")
+                                #print(f"sol.Cm_priv_single: {sol.Cm_priv_single[idx]}")
+                                #print(f"sol.Cm_pub_single: {sol.Cm_pub_single[idx]}")
+                                #print(f"sol.Hm_single: {sol.Hm_single[idx]}")
 
 
     def value_of_choice_couple(self, C_tot, H_tot, t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids):
@@ -534,55 +443,20 @@ class HouseholdModelClass(EconModelClass):
             income_man = wage_func(self, Km, man) * Hm
             total_income = income_woman + income_man
 
-            a_next = assets + total_income - C_tot  # Next period's assets
-            k_next_woman = Kw + Hw  # Next period's human capital for woman
-            k_next_man = Km + Hm  # Next period's human capital for man
-
-            # Ensure variables are numpy arrays
-            a_next_arr = np.array([a_next]) if np.isscalar(a_next) else np.array(a_next).flatten()
-            k_next_woman_arr = np.array([k_next_woman]) if np.isscalar(k_next_woman) else np.array(k_next_woman).flatten()
-            k_next_man_arr = np.array([k_next_man]) if np.isscalar(k_next_man) else np.array(k_next_man).flatten()
-
-            # Ensure Vw_next and Vm_next are 3D numpy arrays
-            Vw_next_arr = np.array(Vw_next)
-            Vm_next_arr = np.array(Vm_next)
-
+            # Ensure all next period variables are vectors of the same length
             love_next_vec = love + par.grid_shock_love
+            num_shocks = love_next_vec.size
 
-            # Ensure all input vectors have the same length
-            vec_length = max(len(love_next_vec), len(a_next_arr), len(k_next_woman_arr), len(k_next_man_arr))
-            love_next_vec = np.resize(love_next_vec, vec_length)
-            a_next_arr = np.resize(a_next_arr, vec_length)
-            k_next_woman_arr = np.resize(k_next_woman_arr, vec_length)
-            k_next_man_arr = np.resize(k_next_man_arr, vec_length)
+            sol.a_next_vec[:] = assets + total_income - C_tot  # Next period's assets
+            sol.k_next_woman_vec[:] = Kw + Hw  # Next period's human capital for woman
+            sol.k_next_man_vec[:] = Km + Hm  # Next period's human capital for man
 
-            # Debugging shapes in correct order
-            print("Arguments to interp_3d_vec for Vw_plus_vec:")
-            print(f"grid1: par.grid_love, shape: {par.grid_love.shape}")
-            print(f"grid2: par.grid_A, shape: {par.grid_A.shape}")
-            print(f"grid3: par.kw_grid, shape: {par.kw_grid.shape}")
-            print(f"value: Vw_next_arr, shape: {Vw_next_arr.shape}")
-            print(f"xi1: love_next_vec, shape: {love_next_vec.shape}")
-            print(f"xi2: a_next_arr, shape: {a_next_arr.shape}")
-            print(f"xi3: k_next_woman_arr, shape: {k_next_woman_arr.shape}")
-            print(f"yi: sol.Vw_plus_vec, shape: {sol.Vw_plus_vec.shape}")
-
-            # Perform interpolation for Vw_plus_vec
-            interp_3d_vec(par.grid_love, par.grid_A, par.kw_grid, Vw_next_arr, love_next_vec, a_next_arr, k_next_woman_arr, sol.Vw_plus_vec)
-
-            # Debugging shapes in correct order
-            print("Arguments to interp_3d_vec for Vm_plus_vec:")
-            print(f"grid1: par.grid_love, shape: {par.grid_love.shape}")
-            print(f"grid2: par.grid_A, shape: {par.grid_A.shape}")
-            print(f"grid3: par.km_grid, shape: {par.km_grid.shape}")
-            print(f"value: Vm_next_arr, shape: {Vm_next_arr.shape}")
-            print(f"xi1: love_next_vec, shape: {love_next_vec.shape}")
-            print(f"xi2: a_next_arr, shape: {a_next_arr.shape}")
-            print(f"xi3: k_next_man_arr, shape: {k_next_man_arr.shape}")
-            print(f"yi: sol.Vm_plus_vec, shape: {sol.Vm_plus_vec.shape}")
-
-            # Perform interpolation for Vm_plus_vec
-            interp_3d_vec(par.grid_love, par.grid_A, par.km_grid, Vm_next_arr, love_next_vec, a_next_arr, k_next_man_arr, sol.Vm_plus_vec)
+            # Perform 5D interpolation
+            for i in range(num_shocks):
+                sol.Vw_plus_vec[i] = interp_5d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid, par.grid_shock_love,
+                                                Vw_next, love_next_vec[i], sol.a_next_vec[i], sol.k_next_woman_vec[i], sol.k_next_man_vec[i], par.grid_shock_love[i])
+                sol.Vm_plus_vec[i] = interp_5d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid, par.grid_shock_love,
+                                                Vm_next, love_next_vec[i], sol.a_next_vec[i], sol.k_next_woman_vec[i], sol.k_next_man_vec[i], par.grid_shock_love[i])
 
             EVw_plus_no_birth = sol.Vw_plus_vec @ par.grid_weight_love
             EVm_plus_no_birth = sol.Vm_plus_vec @ par.grid_weight_love
@@ -599,31 +473,218 @@ class HouseholdModelClass(EconModelClass):
                 Vw_next_with_birth = sol.Vw_couple[t + 1, kids_next]
                 Vm_next_with_birth = sol.Vm_couple[t + 1, kids_next]
 
-                print("Arguments to interp_3d_vec for Vw_plus_vec with birth:")
-                print(f"grid1: par.grid_love, shape: {par.grid_love.shape}")
-                print(f"grid2: par.grid_A, shape: {par.grid_A.shape}")
-                print(f"grid3: par.kw_grid, shape: {par.kw_grid.shape}")
-                print(f"value: Vw_next_with_birth, shape: {Vw_next_with_birth.shape}")
-                print(f"xi1: love_next_vec, shape: {love_next_vec.shape}")
-                print(f"xi2: a_next_arr, shape: {a_next_arr.shape}")
-                print(f"xi3: k_next_woman_arr, shape: {k_next_woman_arr.shape}")
-                print(f"yi: sol.Vw_plus_vec, shape: {sol.Vw_plus_vec.shape}")
+                for i in range(num_shocks):
+                    sol.Vw_plus_vec[i] = interp_5d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid, par.grid_shock_love,
+                                                    Vw_next_with_birth, love_next_vec[i], sol.a_next_vec[i], sol.k_next_woman_vec[i], sol.k_next_man_vec[i], par.grid_shock_love[i])
+                    sol.Vm_plus_vec[i] = interp_5d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid, par.grid_shock_love,
+                                                    Vm_next_with_birth, love_next_vec[i], sol.a_next_vec[i], sol.k_next_woman_vec[i], sol.k_next_man_vec[i], par.grid_shock_love[i])
 
-                # Perform interpolation for Vw_plus_vec with birth
-                interp_3d_vec(par.grid_love, par.grid_A, par.kw_grid, Vw_next_with_birth, love_next_vec, a_next_arr, k_next_woman_arr, sol.Vw_plus_vec)
+                EVw_plus_birth = sol.Vw_plus_vec @ par.grid_weight_love
+                EVm_plus_birth = sol.Vm_plus_vec @ par.grid_weight_love
 
-                print("Arguments to interp_3d_vec for Vm_plus_vec with birth:")
-                print(f"grid1: par.grid_love, shape: {par.grid_love.shape}")
-                print(f"grid2: par.grid_A, shape: {par.grid_A.shape}")
-                print(f"grid3: par.km_grid, shape: {par.km_grid.shape}")
-                print(f"value: Vm_next_with_birth, shape: {Vm_next_with_birth.shape}")
-                print(f"xi1: love_next_vec, shape: {love_next_vec.shape}")
-                print(f"xi2: a_next_arr, shape: {a_next_arr.shape}")
-                print(f"xi3: k_next_man_arr, shape: {k_next_man_arr.shape}")
-                print(f"yi: sol.Vm_plus_vec, shape: {sol.Vm_plus_vec.shape}")
+            EVw_plus = par.p_birth * EVw_plus_birth + (1 - par.p_birth) * EVw_plus_no_birth
+            EVm_plus = par.p_birth * EVm_plus_birth + (1 - par.p_birth) * EVm_plus_no_birth
 
-                # Perform interpolation for Vm_plus_vec with birth
-                interp_3d_vec(par.grid_love, par.grid_A, par.km_grid, Vm_next_with_birth, love_next_vec, a_next_arr, k_next_man_arr, sol.Vm_plus_vec)
+            Vw += par.beta * EVw_plus
+            Vm += par.beta * EVm_plus
+
+        # Return
+        Val = power * Vw + (1.0 - power) * Vm
+        return Val, Cw_priv, Cm_priv, C_pub, Hw, Hm, Vw, Vm
+
+
+
+
+    
+    
+    def solve_couple(self, t):
+        par = self.par
+        sol = self.sol
+        print(f"Solving for couples at time {t}")
+
+        solution_count = 0
+
+        remain_Vw, remain_Vm, remain_Cw_priv, remain_Cm_priv, remain_C_pub = (
+            np.ones(par.num_power), np.ones(par.num_power), np.ones(par.num_power), np.ones(par.num_power), np.ones(par.num_power))
+        remain_Hw, remain_Hm = np.ones(par.num_power), np.ones(par.num_power)
+
+        Vw_next = None
+        Vm_next = None
+        for iN, kids in enumerate(par.nw_grid):
+            for iL, love in enumerate(par.grid_love):
+                for iA, A in enumerate(par.grid_A):
+                    for iKw, Kw in enumerate(par.kw_grid):
+                        for iKm, Km in enumerate(par.km_grid):
+                            starting_val = None
+                            for iP, power in enumerate(par.grid_power):
+                                if t < (par.T - 1):
+                                    Vw_next = self.sol.Vw_couple[t + 1, iP]
+                                    Vm_next = self.sol.Vm_couple[t + 1, iP]
+
+                                if iP > 0:
+                                    C_tot_last = remain_Cw_priv[iP - 1] + remain_Cm_priv[iP - 1] + remain_C_pub[iP - 1]
+                                    starting_val = np.array([C_tot_last])
+
+                                try:
+                                    remain_Cw_priv[iP], remain_Cm_priv[iP], remain_C_pub[iP], remain_Hw[iP], remain_Hm[iP], remain_Vw[iP], remain_Vm[iP] = self.solve_remain_couple(
+                                        t, A, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids, starting_val=starting_val)
+                                except Exception as e:
+                                    print(f"Error in solve_remain_couple: {e}")
+                                    remain_Cw_priv[iP], remain_Cm_priv[iP], remain_C_pub[iP], remain_Hw[iP], remain_Hm[iP], remain_Vw[iP], remain_Vm[iP] = [np.nan] * 7
+
+                                #Increment the solution count
+                                solution_count += 1
+                                print(f"Solution {solution_count} for couple at t={t}, kids={kids}, love={love}, A={A}, Kw={Kw}, Km={Km}, power={power} generated.")
+
+                                idx_single_woman = (t, iN, iA, iKw)
+                                idx_single_man = (t, iN, iA, iKm)
+                                idx_couple = lambda iP: (t, iN, iP, iL, iA, iKw, iKm)
+
+                                list_start_as_couple = (sol.Vw_couple, sol.Vm_couple, sol.Cw_priv_couple, sol.Cm_priv_couple, sol.C_pub_couple, sol.Hw_couple, sol.Hm_couple)
+                                list_remain_couple = (remain_Vw, remain_Vm, remain_Cw_priv, remain_Cm_priv, remain_C_pub, remain_Hw, remain_Hm)
+                                list_trans_to_single = (sol.Vw_single, sol.Vm_single, sol.Cw_priv_single, sol.Cm_priv_single, sol.Cw_pub_single, sol.Hw_single, sol.Hm_single)
+
+                                Sw = remain_Vw - sol.Vw_single[idx_single_woman]
+                                Sm = remain_Vm - sol.Vm_single[idx_single_man]
+
+                                check_participation_constraints(sol.power_idx, sol.power, Sw, Sm, idx_single_woman, idx_single_man, idx_couple, list_start_as_couple, list_remain_couple, list_trans_to_single, par)
+
+        print(f"Total solutions generated for couples at time {t}: {solution_count}")
+    
+    def value_of_choice_couple_lunchtime(self, C_tot, H_tot, t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids):
+        sol = self.sol
+        par = self.par
+
+        love = par.grid_love[iL]
+        # Current utility from consumption allocation
+        Cw_priv, Cm_priv, C_pub = intraperiod_allocation(C_tot, iP, sol, par)
+        Hw, Hm = intraperiod_allocation_hours(H_tot, iP, sol, kids, par)
+        Vw = usr.util(Cw_priv, C_pub, Hw, woman, kids, par, love)
+        Vm = usr.util(Cm_priv, C_pub, Hm, man, kids, par, love)
+
+        # Add continuation value
+        if t < (par.T - 1):
+            # Calculate income based on work hours and human capital
+            income_woman = wage_func(self, Kw, woman) * Hw
+            income_man = wage_func(self, Km, man) * Hm
+            total_income = income_woman + income_man
+
+            # Ensure all next period variables are vectors of the same length
+            love_next_vec = love + par.grid_shock_love
+            num_shocks = love_next_vec.size
+
+            # Initialize arrays using [:] to update in place
+            sol.a_next_vec[:] = assets + total_income - C_tot  # Next period's assets
+            sol.k_next_woman_vec[:] = Kw + Hw  # Next period's human capital for woman
+            sol.k_next_man_vec[:] = Km + Hm  # Next period's human capital for man
+
+            print(f"type love_next_vec: {type(love_next_vec)}, love_next_vec: {love_next_vec}, shape love_next_vec: {np.shape(love_next_vec)}")
+            print(f"type sol.a_next_vec: {type(sol.a_next_vec)}, sol.a_next_vec: {sol.a_next_vec}, shape sol.a_next_vec: {np.shape(sol.a_next_vec)}")
+            print(f"type sol.k_next_woman_vec: {type(sol.k_next_woman_vec)}, sol.k_next_woman_vec: {sol.k_next_woman_vec}, shape sol.k_next_woman_vec: {np.shape(sol.k_next_woman_vec)}")
+            print(f"type sol.k_next_man_vec: {type(sol.k_next_man_vec)}, sol.k_next_man_vec: {sol.k_next_man_vec}, shape sol.k_next_man_vec: {np.shape(sol.k_next_man_vec)}")
+            print(f"Vw_next: {Vw_next}, shape Vw_next: {np.shape(Vw_next)}")
+            print(f"Vm_next: {Vm_next}, shape Vm_next: {np.shape(Vm_next)}")
+
+            # Ensure the grid inputs are 1D arrays
+            if len(par.grid_love.shape) != 1 or len(par.grid_A.shape) != 1 or len(par.kw_grid.shape) != 1 or len(par.km_grid.shape) != 1:
+                raise ValueError("Grid inputs to interp_3d_vec must be 1D arrays.")
+
+            # Ensure the value array inputs are 5D arrays
+            if len(Vw_next.shape) != 5 or len(Vm_next.shape) != 5:
+                raise ValueError("Value inputs to interp_3d_vec must be 5D arrays.")
+
+            # Perform interpolation
+            interp_3d_vec(par.grid_love, par.grid_A, par.kw_grid, Vw_next, love_next_vec, sol.a_next_vec, sol.k_next_woman_vec, sol.Vw_plus_vec)
+            interp_3d_vec(par.grid_love, par.grid_A, par.km_grid, Vm_next, love_next_vec, sol.a_next_vec, sol.k_next_man_vec, sol.Vm_plus_vec)
+
+            EVw_plus_no_birth = sol.Vw_plus_vec @ par.grid_weight_love
+            EVm_plus_no_birth = sol.Vm_plus_vec @ par.grid_weight_love
+
+            # Child-birth considerations
+            if kids >= (par.num_n - 1):
+                # Cannot have more children
+                EVw_plus_birth = EVw_plus_no_birth
+                EVm_plus_birth = EVm_plus_no_birth
+            else:
+                kids_next = kids + 1
+
+                # Interpolate future values for the next period with a new child
+                Vw_next_with_birth = sol.Vw_couple[t + 1, kids_next]
+                Vm_next_with_birth = sol.Vm_couple[t + 1, kids_next]
+
+                interp_3d_vec(par.grid_love, par.grid_A, par.kw_grid, Vw_next_with_birth, love_next_vec, sol.a_next_vec, sol.k_next_woman_vec, sol.Vw_plus_vec)
+                interp_3d_vec(par.grid_love, par.grid_A, par.km_grid, Vm_next_with_birth, love_next_vec, sol.a_next_vec, sol.k_next_man_vec, sol.Vm_plus_vec)
+
+                EVw_plus_birth = sol.Vw_plus_vec @ par.grid_weight_love
+                EVm_plus_birth = sol.Vm_plus_vec @ par.grid_weight_love
+
+            EVw_plus = par.p_birth * EVw_plus_birth + (1 - par.p_birth) * EVw_plus_no_birth
+            EVm_plus = par.p_birth * EVm_plus_birth + (1 - par.p_birth) * EVm_plus_no_birth
+
+            Vw += par.beta * EVw_plus
+            Vm += par.beta * EVm_plus
+
+        # Return
+        Val = power * Vw + (1.0 - power) * Vm
+        return Val, Cw_priv, Cm_priv, C_pub, Hw, Hm, Vw, Vm
+
+
+
+    def value_of_choice_couple_tiles(self, C_tot, H_tot, t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids):
+        
+        sol = self.sol
+        par = self.par
+
+        love = par.grid_love[iL]
+        # Current utility from consumption allocation
+        Cw_priv, Cm_priv, C_pub = intraperiod_allocation(C_tot, iP, sol, par)
+        Hw, Hm = intraperiod_allocation_hours(H_tot, iP, sol, kids, par)
+        Vw = usr.util(Cw_priv, C_pub, Hw, woman, kids, par, love)
+        Vm = usr.util(Cm_priv, C_pub, Hm, man, kids, par, love)
+
+        # Add continuation value
+        if t < (par.T - 1):
+            # Calculate income based on work hours and human capital
+            income_woman = wage_func(self, Kw, woman) * Hw
+            income_man = wage_func(self, Km, man) * Hm
+            total_income = income_woman + income_man
+
+            # Ensure all next period variables are vectors of the same length
+            love_next_vec = love + par.grid_shock_love
+            num_shocks = love_next_vec.size
+
+            sol.a_next_vec[:] = np.tile(num_shocks, assets + total_income - C_tot)  # Next period's assets
+            sol.k_next_woman_vec[:] = np.tile(num_shocks, Kw + Hw)  # Next period's human capital for woman
+            sol.k_next_man_vec[:] = np.tile(num_shocks, Km + Hm)  # Next period's human capital for man
+
+            print(f"type love_next_vec: {type(love_next_vec)}, love_next_vec: {love_next_vec}, shape love_next_vec: {np.shape(love_next_vec)}")
+            print(f"type sol.a_next_vec: {type(sol.a_next_vec)}, sol.a_next_vec: {sol.a_next_vec}, shape sol.a_next_vec: {np.shape(sol.a_next_vec)}")
+            print(f"type sol.k_next_woman_vec: {type(sol.k_next_woman_vec)}, sol.k_next_woman_vec: {sol.k_next_woman_vec}, shape sol.k_next_woman_vec: {np.shape(sol.k_next_woman_vec)}")
+            print(f"type sol.k_next_man_vec: {type(sol.k_next_man_vec)}, sol.k_next_man_vec: {sol.k_next_man_vec}, shape sol.k_next_man_vec: {np.shape(sol.k_next_man_vec)}")
+            #print(f"Vw_next: {Vw_next}, shape Vw_next: {np.shape(Vw_next)}")
+            #print(f"Vm_next: {Vm_next}, shape Vm_next: {np.shape(Vm_next)}")
+
+            # Perform interpolation
+            interp_3d_vec(par.grid_love, par.grid_A, par.kw_grid, Vw_next, love_next_vec, sol.a_next_vec, sol.k_next_woman_vec, sol.Vw_plus_vec)
+            interp_3d_vec(par.grid_love, par.grid_A, par.km_grid, Vm_next, love_next_vec, sol.a_next_vec, sol.k_next_man_vec, sol.Vm_plus_vec)
+
+            EVw_plus_no_birth = sol.Vw_plus_vec @ par.grid_weight_love
+            EVm_plus_no_birth = sol.Vm_plus_vec @ par.grid_weight_love
+
+            # Child-birth considerations
+            if kids >= (par.num_n - 1):
+                # Cannot have more children
+                EVw_plus_birth = EVw_plus_no_birth
+                EVm_plus_birth = EVm_plus_no_birth
+            else:
+                kids_next = kids + 1
+
+                # Interpolate future values for the next period with a new child
+                Vw_next_with_birth = sol.Vw_couple[t + 1, kids_next]
+                Vm_next_with_birth = sol.Vm_couple[t + 1, kids_next]
+
+                interp_3d_vec(par.grid_love, par.grid_A, par.kw_grid, Vw_next_with_birth, love_next_vec, sol.a_next_vec, sol.k_next_woman_vec, sol.Vw_plus_vec)
+                interp_3d_vec(par.grid_love, par.grid_A, par.km_grid, Vm_next_with_birth, love_next_vec, sol.a_next_vec, sol.k_next_man_vec, sol.Vm_plus_vec)
 
                 EVw_plus_birth = sol.Vw_plus_vec @ par.grid_weight_love
                 EVm_plus_birth = sol.Vm_plus_vec @ par.grid_weight_love
@@ -642,30 +703,125 @@ class HouseholdModelClass(EconModelClass):
 
 
 
-    def solve_remain_couple(self, t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids, starting_val=None):
+    def value_of_choice_couple_other(self, C_tot, H_tot, t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids):
+        sol = self.sol
         par = self.par
 
-        if t == (par.T - 1):  # Terminal period
+        love = par.grid_love[iL]
+        #print(f"Inputs - C_tot: {C_tot}, H_tot: {H_tot}, t: {t}, assets: {assets}, Kw: {Kw}, Km: {Km}, iL: {iL}, iP: {iP}, power: {power}, kids: {kids}")
+        # Current utility from consumption allocation
+        Cw_priv, Cm_priv, C_pub = intraperiod_allocation(C_tot, iP, sol, par)
+        Hw, Hm = intraperiod_allocation_hours(H_tot, iP, sol, kids, par)
+        #print(f"Cw_priv: {Cw_priv}, Cm_priv: {Cm_priv}, C_pub: {C_pub}, Hw: {Hw}, Hm: {Hm}")
+        Vw = usr.util(Cw_priv, C_pub, Hw, woman, kids, par, love)
+        Vm = usr.util(Cm_priv, C_pub, Hm, man, kids, par, love)
+
+        # Add continuation value
+        if t < (par.T - 1):
+            # Calculate income based on work hours and human capital
+            income_woman = wage_func(self, Kw, woman) * Hw
+            income_man = wage_func(self, Km, man) * Hm
+            total_income = income_woman + income_man
+
+            a_next = assets + total_income - C_tot  # Next period's assets
+            k_next_woman = Kw + Hw  # Next period's human capital for woman
+            k_next_man = Km + Hm  # Next period's human capital for man
+
+            # Ensure variables are numpy arrays
+            a_next_arr = np.array([a_next]) if np.isscalar(a_next) else a_next
+            k_next_woman_arr = np.array([k_next_woman]) if np.isscalar(k_next_woman) else k_next_woman
+            k_next_man_arr = np.array([k_next_man]) if np.isscalar(k_next_man) else k_next_man
+
+            # Ensure Vw_next and Vm_next are 3D numpy arrays
+            Vw_next_arr = np.array(Vw_next)
+            Vm_next_arr = np.array(Vm_next)
+
+            love_next_vec = love + par.grid_shock_love
+
+            # Perform interpolation
+            interp_3d_vec(par.grid_love, par.grid_A, par.kw_grid, Vw_next_arr, love_next_vec, a_next_arr, k_next_woman_arr, sol.Vw_plus_vec)
+            interp_3d_vec(par.grid_love, par.grid_A, par.km_grid, Vm_next_arr, love_next_vec, a_next_arr, k_next_man_arr, sol.Vm_plus_vec)
+
+            EVw_plus_no_birth = sol.Vw_plus_vec @ par.grid_weight_love
+            EVm_plus_no_birth = sol.Vm_plus_vec @ par.grid_weight_love
+            print(f"EVw_plus_no_birth: {EVw_plus_no_birth}, EVm_plus_no_birth: {EVm_plus_no_birth}")
+            # Child-birth considerations
+            if kids >= (par.num_n - 1):
+                # Cannot have more children
+                EVw_plus_birth = EVw_plus_no_birth
+                EVm_plus_birth = EVm_plus_no_birth
+            else:
+                kids_next = kids + 1
+
+                # Interpolate future values for the next period with a new child
+                Vw_next_with_birth = sol.Vw_couple[t + 1, kids_next]
+                Vm_next_with_birth = sol.Vm_couple[t + 1, kids_next]
+
+                interp_3d_vec(par.grid_love, par.grid_A, par.kw_grid, Vw_next_with_birth, love_next_vec, a_next_arr, k_next_woman_arr, sol.Vw_plus_vec)
+                interp_3d_vec(par.grid_love, par.grid_A, par.km_grid, Vm_next_with_birth, love_next_vec, a_next_arr, k_next_man_arr, sol.Vm_plus_vec)
+
+                EVw_plus_birth = sol.Vw_plus_vec @ par.grid_weight_love
+                EVm_plus_birth = sol.Vm_plus_vec @ par.grid_weight_love
+
+                print(f"EVw_plus_birth: {EVw_plus_birth}, EVm_plus_birth: {EVm_plus_birth}")
+
+            EVw_plus = par.p_birth * EVw_plus_birth + (1 - par.p_birth) * EVw_plus_no_birth
+            EVm_plus = par.p_birth * EVm_plus_birth + (1 - par.p_birth) * EVm_plus_no_birth
+
+            Vw += par.beta * EVw_plus
+            Vm += par.beta * EVm_plus
+
+        # Return
+        Val = power * Vw + (1.0 - power) * Vm
+        return Val, Cw_priv, Cm_priv, C_pub, Hw, Hm, Vw, Vm
+
+
+    def solve_remain_couple(self,t,assets,Kw,Km,iL,iP,power,Vw_next,Vm_next,kids,starting_val = None, starting_val_hours = None):
+        par = self.par
+
+        if t==(par.T-1): # Terminal period
+            # In the last period, all assets are consumed
             C_tot = assets
-            obj = lambda x: -self.value_of_choice_couple(C_tot, x[0], t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids)[0]
-            x0 = np.array([0.4]) if starting_val is None else starting_val
-            bounds = ((1.0e-6, np.inf),)
+            # Objective function only for working hours optimization
+            obj = lambda x: - self.value_of_choice_couple(C_tot, x[0], t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids)[0]
+            
+            x0 = np.array([0.4]) if starting_val_hours is None else np.array(starting_val_hours)  # initial guess for H_tot
+
+            # Optimize for working hours
+            res = optimize.minimize(obj, x0, bounds=((1.0e-6, np.inf),), method='SLSQP')
+            H_tot = res.x[0]
         else:
-            obj = lambda x: -self.value_of_choice_couple(x[0], x[1], t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids)[0]
-            x0 = np.array([0.4, 0.4]) if starting_val is None else starting_val
-            bounds = ((1.0e-6, np.inf), (1.0e-6, np.inf))
+            
+            # objective function
+            obj = lambda x: - self.value_of_choice_couple(x[0],x[1],t,assets,Kw, Km,iL,iP,power,Vw_next,Vm_next,kids)[0]
+            #x0 = np.array([0.4, 0.4]) if starting_val is None else starting_val #initial guess [C_tot, H_tot]
+            # Initial guess
+            #print(f"starting_val: {starting_val}, starting_val_hours: {starting_val_hours}")
+            #print(f"type of starting_val: {type(starting_val)}, type of starting_val_hours: {type(starting_val_hours)}")
+            # Initial guess
+            if starting_val is None:
+                C_tot_guess = 0.4
+            else:
+                C_tot_guess = starting_val[0]
 
-        try:
-            res = optimize.minimize(obj, x0, bounds=bounds, method='SLSQP')
-            C_tot = res.x[0] if t != (par.T - 1) else assets
-            H_tot = res.x[1] if t != (par.T - 1) else res.x[0]
-        except Exception as e:
-            print(f"Optimization error: {e}")
-            return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+            if starting_val_hours is None:
+                H_tot_guess = 0.4
+            else:
+                H_tot_guess = starting_val_hours[0]
 
-        _, Cw_priv, Cm_priv, C_pub, Hw, Hm, Vw, Vm = self.value_of_choice_couple(C_tot, H_tot, t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids)
+            x0 = np.array([C_tot_guess, H_tot_guess])
+          
+            # optimize
+            res = optimize.minimize(obj,x0,bounds=((1.0e-6, np.inf),(1.0e-6, np.inf)) ,method='SLSQP') 
+            C_tot = res.x[0]
+            H_tot = res.x[1]
+
+        # implied consumption allocation (re-calculation)
+        _, Cw_priv, Cm_priv, C_pub, Hw, Hm, Vw, Vm = self.value_of_choice_couple(C_tot,H_tot,t,assets,Kw,Km,iL,iP,power,Vw_next,Vm_next, kids) # throw out value?
+
+        # return objects
         return Cw_priv, Cm_priv, C_pub, Hw, Hm, Vw, Vm
-    
+
 
     def value_of_choice_single(self,C_tot,hours,assets,capital,kids,gender,t):
 
@@ -730,7 +886,7 @@ class HouseholdModelClass(EconModelClass):
         # e. return value of choice (including penalty)
         return util + par.beta*EV_next + penalty
         
-   
+
     def simulate(self):
         sol = self.sol
         sim = self.sim
@@ -744,6 +900,9 @@ class HouseholdModelClass(EconModelClass):
                     A_lag = sim.init_A[i]
                     Aw_lag = sim.init_Aw[i]
                     Am_lag = sim.init_Am[i]
+                    Kw_lag = sim.init_Kw[i]
+                    Km_lag = sim.init_Km[i]
+                    n_lag = sim.init_n[i]
                     couple_lag = sim.init_couple[i]
                     power_idx_lag = sim.init_power_idx[i]
                     love = sim.love[i,t] = sim.init_love[i]
@@ -752,6 +911,8 @@ class HouseholdModelClass(EconModelClass):
                     A_lag = sim.A[i,t-1]
                     Aw_lag = sim.Aw[i,t-1]
                     Am_lag = sim.Am[i,t-1]
+                    Kw_lag = sim.Kw[i,t-1]
+                    Km_lag = sim.Km[i,t-1]
                     couple_lag = sim.couple[i,t-1]
                     power_idx_lag = sim.power_idx[i,t-1]
                     love = sim.love[i,t]
@@ -762,8 +923,8 @@ class HouseholdModelClass(EconModelClass):
                 if couple_lag:                   
 
                     # value of transitioning into singlehood
-                    Vw_single = linear_interp.interp_1d(par.grid_Aw,sol.Vw_trans_single[t],Aw_lag)
-                    Vm_single = linear_interp.interp_1d(par.grid_Am,sol.Vm_trans_single[t],Am_lag)
+                    Vw_single = interp_1d(par.grid_Aw,sol.Vw_trans_single[t],Aw_lag)
+                    Vm_single = interp_1d(par.grid_Am,sol.Vm_trans_single[t],Am_lag)
 
                     idx = (t,power_idx_lag)
                     Vw_couple_i = linear_interp.interp_2d(par.grid_love,par.grid_A,sol.Vw_remain_couple[idx],love,A_lag)
@@ -855,7 +1016,7 @@ class HouseholdModelClass(EconModelClass):
         sim.Cw_tot = sim.Cw_priv + sim.Cw_pub
         sim.Cm_tot = sim.Cm_priv + sim.Cm_pub
         sim.C_tot = sim.Cw_priv + sim.Cm_priv + sim.Cw_pub
-    
+
 
 ############
 # routines #
@@ -865,35 +1026,31 @@ def intraperiod_allocation_single(C_tot,gender,par):
     C_pub = C_tot - C_priv
     return C_priv,C_pub
 
-
 def intraperiod_allocation(C_tot,iP,sol,par):
     #print(f"Entering intraperiod_allocation with C_tot: {C_tot}, iP: {iP}")
+    #print(f"Entering intraperiod_allocation with C_tot: {C_tot}, iP: {iP}")
     # interpolate pre-computed solution
-    #j1 = binary_search(0,par.num_Ctot,par.grid_Ctot,C_tot)
-    #Cw_priv = interp_1d(par.grid_Ctot,sol.pre_Ctot_Cw_priv[iP],C_tot)
-    #Cm_priv = interp_1d(par.grid_Ctot,sol.pre_Ctot_Cm_priv[iP],C_tot)
-    try:
-        Cw_priv = interp_1d(par.grid_Ctot, sol.pre_Ctot_Cw_priv[iP], C_tot)
-        Cm_priv = interp_1d(par.grid_Ctot, sol.pre_Ctot_Cm_priv[iP], C_tot)
-    except Exception as e:
-        print(f"Interpolation error: {e}")
-        Cw_priv, Cm_priv = np.nan, np.nan
-
+    j1 = binary_search(0,par.num_Ctot,par.grid_Ctot,C_tot)
+    Cw_priv = _interp_1d(par.grid_Ctot,sol.pre_Ctot_Cw_priv[iP],C_tot,j1)
+    Cm_priv = _interp_1d(par.grid_Ctot,sol.pre_Ctot_Cm_priv[iP],C_tot,j1)
+    
     C_pub = C_tot - Cw_priv - Cm_priv 
     #print(f"Cw_priv: {Cw_priv}, Cm_priv: {Cm_priv}, C_pub: {C_pub}")
+    #print(f"Cw_priv: {Cw_priv}, Cm_priv: {Cm_priv}, C_pub: {C_pub}")
     return Cw_priv, Cm_priv, C_pub
+
 
 def intraperiod_allocation_hours(H_tot,iP,sol,kids,par):
     if kids == 0:
         # interpolate pre-computed solution
-        #j1 = binary_search(0,par.num_Htot,par.grid_Htot,H_tot)
-        Hw = interp_1d(par.grid_Htot,sol.pre_Htot_Hw_nokid[iP],H_tot)
-        Hm = interp_1d(par.grid_Htot,sol.pre_Htot_Hm_nokid[iP],H_tot)
+        j1 = binary_search(0,par.num_Htot,par.grid_Htot,H_tot)
+        Hw = _interp_1d(par.grid_Htot,sol.pre_Htot_Hw_nokid[iP],H_tot,j1)
+        Hm = _interp_1d(par.grid_Htot,sol.pre_Htot_Hm_nokid[iP],H_tot,j1)
     else:
         # interpolate pre-computed solution
-        #j1 = binary_search(0,par.num_Htot,par.grid_Htot,H_tot)
-        Hw = interp_1d(par.grid_Htot,sol.pre_Htot_Hw_kid[iP],H_tot)
-        Hm = interp_1d(par.grid_Htot,sol.pre_Htot_Hm_kid[iP],H_tot)
+        j1 = binary_search(0,par.num_Htot,par.grid_Htot,H_tot)
+        Hw = _interp_1d(par.grid_Htot,sol.pre_Htot_Hw_kid[iP],H_tot,j1)
+        Hm = _interp_1d(par.grid_Htot,sol.pre_Htot_Hm_kid[iP],H_tot,j1)
     return Hw, Hm
 
 def solve_intraperiod_couple(C_tot, power, kids, par, hours_woman=0.0, hours_man=0.0, starting_val=None):
@@ -943,143 +1100,7 @@ def solve_intraperiod_couple_hours(H_tot, power, kids, par):
     Hm = H_tot - Hw
     return Hw, Hm
 
-def solve_intraperiod_couple_old(C_tot,power,kids,par,starting_val=None):
-    
-    # setup estimation. Impose constraint that C_tot = Cw+Cm+C
-    bounds = optimize.Bounds(0.0, C_tot, keep_feasible=True)
-    hours = 0.0 # hours are not relevant for the consumption allocation
-    obj = lambda x: - (power*usr.util(x[0],C_tot-np.sum(x),hours,woman,kids,par) + (1.0-power)*usr.util(x[1],C_tot-np.sum(x),hours,man,kids,par))
-    
-
-    # estimate
-    x0 = np.array([C_tot/3,C_tot/3]) if starting_val is None else starting_val
-    res = optimize.minimize(obj,x0,bounds=bounds)
-
-    # unpack
-    Cw_priv = res.x[0]
-    Cm_priv = res.x[1]
-    C_pub = C_tot - Cw_priv - Cm_priv
-
-    return Cw_priv,Cm_priv,C_pub
-
-
-def check_participation_constraints_other(power_idx, power, Sw, Sm, idx_single_woman, idx_single_man, idx_couple, list_couple, list_raw, list_single, par):
-    # Check the participation constraints. Array
-    min_Sw = np.min(Sw)
-    min_Sm = np.min(Sm)
-    max_Sw = np.max(Sw)
-    max_Sm = np.max(Sm)
-
-    if (min_Sw >= 0.0) & (min_Sm >= 0.0):  # All values are consistent with marriage
-        for iP in range(par.num_power):
-            # Overwrite output for couple
-            idx = idx_couple(iP)
-            #print(f"idx: {idx}")
-            for i in range(len(list_couple)):
-                list_couple[i][idx] = list_raw[i][iP]
-
-            power_idx[idx] = iP
-            power[idx] = par.grid_power[iP]
-
-    elif (max_Sw < 0.0) | (max_Sm < 0.0):  # No value is consistent with marriage
-        for iP in range(par.num_power):
-            # Overwrite output for couple
-            idx = idx_couple(iP)
-            for i in range(len(list_couple)):
-                if i % 2 == 0:  # Women-related data
-                    list_couple[i][idx] = list_single[i][idx_single_woman]
-                else:  # Men-related data
-                    list_couple[i][idx] = list_single[i][idx_single_man]
-
-            power_idx[idx] = -1
-            power[idx] = -1.0
-
-    else:
-        # Find lowest (highest) value with positive surplus for women (men)
-        Low_w = 1  # In case there is no crossing, this will be the correct value
-        Low_m = par.num_power - 1 - 1  # In case there is no crossing, this will be the correct value
-        for iP in range(par.num_power - 1):
-            if (Sw[iP] < 0) & (Sw[iP + 1] >= 0):
-                Low_w = iP + 1
-
-            if (Sm[iP] >= 0) & (Sm[iP + 1] < 0):
-                Low_m = iP
-
-        # Interpolate the surplus of each member at indifference points
-        id = Low_w - 1
-        denom = (par.grid_power[id + 1] - par.grid_power[id])
-        ratio_w = (Sw[id + 1] - Sw[id]) / denom
-        ratio_m = (Sm[id + 1] - Sm[id]) / denom
-        power_at_zero_w = par.grid_power[id] - Sw[id] / ratio_w
-        Sm_at_zero_w = Sm[id] + ratio_m * (power_at_zero_w - par.grid_power[id])
-
-        id = Low_m
-        denom = (par.grid_power[id + 1] - par.grid_power[id])
-        ratio_w = (Sw[id + 1] - Sw[id]) / denom
-        ratio_m = (Sm[id + 1] - Sm[id]) / denom
-        power_at_zero_m = par.grid_power[id] - Sm[id] / ratio_m
-        Sw_at_zero_m = Sw[id] + ratio_w * (power_at_zero_m - par.grid_power[id])
-
-        for iP in range(par.num_power):
-            idx = idx_couple(iP)
-            if iP < Low_w:
-                if Sm_at_zero_w > 0:
-                    for i in range(len(list_couple)):
-                        if iP == 0:
-                            #print(f"interpolating at list_raw[i]: {list_raw[i]}")
-                            #print(f'par.grid_power: {par.grid_power}')
-                            list_couple[i][idx] = interp_1d(par.grid_power, list_raw[i], power_at_zero_w) #, Low_w - 1)
-                        else:
-                            list_couple[i][idx] = list_couple[i][idx_couple(0)]
-
-                    power_idx[idx] = Low_w
-                    power[idx] = power_at_zero_w
-                else:
-                    for i in range(len(list_couple)):
-                        if i % 2 == 0:
-                            list_couple[i][idx] = list_single[i][idx_single_woman]
-                        else:
-                            list_couple[i][idx] = list_single[i][idx_single_man]
-
-                    power_idx[idx] = -1
-                    power[idx] = -1.0
-            elif iP > Low_m:
-                if Sw_at_zero_m > 0:
-                    for i in range(len(list_couple)):
-                        if iP == (Low_m + 1):
-                            list_couple[i][idx] = interp_1d(par.grid_power, list_raw[i], power_at_zero_m, Low_m)
-                        else:
-                            list_couple[i][idx] = list_couple[i][idx_couple(Low_m + 1)]
-
-                    power_idx[idx] = Low_m
-                    power[idx] = power_at_zero_m
-                else:
-                    for i in range(len(list_couple)):
-                        if i % 2 == 0:
-                            list_couple[i][idx] = list_single[i][idx_single_woman]
-                        else:
-                            list_couple[i][idx] = list_single[i][idx_single_man]
-
-                    power_idx[idx] = -1
-                    power[idx] = -1.0
-            else:
-                for i in range(len(list_couple)):
-                    list_couple[i][idx] = list_raw[i][iP]
-
-                power_idx[idx] = iP
-                power[idx] = par.grid_power[iP]
-
-
-
-
 def check_participation_constraints(power_idx, power, Sw, Sm, idx_single_woman, idx_single_man, idx_couple, list_couple, list_raw, list_single, par):
-    # Print shapes for debugging
-    #print(f"power_idx.shape: {power_idx.shape}")
-    #print(f"power.shape: {power.shape}")
-    #for i, arr in enumerate(list_couple):
-        #print(f"list_couple[{i}].shape: {arr.shape}")
-    #for i, arr in enumerate(list_single):
-        #print(f"list_single[{i}].shape: {arr.shape}")
 
     # Check the participation constraints
     min_Sw = np.min(Sw)
@@ -1172,7 +1193,7 @@ def check_participation_constraints(power_idx, power, Sw, Sm, idx_single_woman, 
                     for i in range(len(list_couple)):
                         if iP == (Low_m + 1):
                             if all(x < s for x, s in zip(idx, list_couple[i].shape)) and all(x < s for x, s in zip(idx_couple(Low_m), list_couple[i].shape)):
-                                list_couple[i][idx] = interp_1d(par.grid_power, list_raw[i], power_at_zero_m, Low_m)
+                                list_couple[i][idx] = _interp_1d(par.grid_power, list_raw[i], power_at_zero_m, Low_m)
                         else:
                             if all(x < s for x, s in zip(idx, list_couple[i].shape)) and all(x < s for x, s in zip(idx_couple(Low_m + 1), list_couple[i].shape)):
                                 list_couple[i][idx] = list_couple[i][idx_couple(Low_m + 1)]
@@ -1199,9 +1220,269 @@ def check_participation_constraints(power_idx, power, Sw, Sm, idx_single_woman, 
                     power[idx] = par.grid_power[iP]
 
 
+def check_participation_constraints_other(power_idx, power, Sw, Sm, idx_single_woman, idx_single_man, idx_couple, list_couple, list_raw, list_single, par):
+    
+    # check the participation constraints. Array
+    min_Sw = np.min(Sw)
+    min_Sm = np.min(Sm)
+    max_Sw = np.max(Sw)
+    max_Sm = np.max(Sm)
+
+    if (min_Sw >= 0.0) & (min_Sm >= 0.0): # all values are consistent with marriage
+        for iP in range(par.num_power):
+            idx = idx_couple(iP)
+            for i, key in enumerate(list_couple):
+                list_couple[i][idx] = list_raw[i][iP]
+
+            if all(x < s for x, s in zip(idx, power_idx.shape)):
+                power_idx[idx] = iP
+                power[idx] = par.grid_power[iP]
+
+    elif (max_Sw < 0.0) | (max_Sm < 0.0): # no value is consistent with marriage
+        for iP in range(par.num_power):
+            idx = idx_couple(iP)
+            for i, key in enumerate(list_couple):
+                # Debugging prints
+                #print(f"Checking list_couple[{i}][{idx}] and list_single[{i}][{idx_single_woman}]")
+                #print(f"Shapes: list_couple[{i}].shape = {list_couple[i].shape}, list_single[{i}].shape = {list_single[i].shape}")
+                #print(f"indices: idx_single_woman = {idx_single_woman}, idx_single_man = {idx_single_man}, idx = {idx}")
+                
+                # Ensure indices are within valid range
+                if isinstance(idx_single_woman, tuple) and isinstance(idx, tuple):
+                    if all(x < s for x, s in zip(idx_single_woman, list_single[i].shape)) and all(x < s for x, s in zip(idx, list_couple[i].shape)):
+                        list_couple[i][idx] = list_single[i][idx_single_woman]
+                    if all(x < s for x, s in zip(idx_single_man, list_single[i].shape)) and all(x < s for x, s in zip(idx, list_couple[i].shape)):
+                        list_couple[i][idx] = list_single[i][idx_single_man]
+
+            if all(x < s for x, s in zip(idx, power_idx.shape)):
+                power_idx[idx] = -1
+                power[idx] = -1.0
+
+    else: 
+    
+        # find lowest (highest) value with positive surplus for women (men)
+        Low_w = 1 #0 # in case there is no crossing, this will be the correct value
+        Low_m = par.num_power-1-1 #par.num_power-1 # in case there is no crossing, this will be the correct value
+        for iP in range(par.num_power-1):
+            if (Sw[iP]<0) & (Sw[iP+1]>=0):
+                Low_w = iP+1
+                
+            if (Sm[iP]>=0) & (Sm[iP+1]<0):
+                Low_m = iP
+
+        # b. interpolate the surplus of each member at indifference points
+        # women indifference
+        id = Low_w-1
+        denom = (par.grid_power[id+1] - par.grid_power[id])
+        ratio_w = (Sw[id+1] - Sw[id])/denom
+        ratio_m = (Sm[id+1] - Sm[id])/denom
+        power_at_zero_w = par.grid_power[id] - Sw[id]/ratio_w
+        Sm_at_zero_w = Sm[id] + ratio_m*( power_at_zero_w - par.grid_power[id] )
+
+        # men indifference
+        id = Low_m
+        denom = (par.grid_power[id+1] - par.grid_power[id])
+        ratio_w = (Sw[id+1] - Sw[id])/denom
+        ratio_m = (Sm[id+1] - Sm[id])/denom
+        power_at_zero_m = par.grid_power[id] - Sm[id]/ratio_m
+        Sw_at_zero_m = Sw[id] + ratio_w*( power_at_zero_m - par.grid_power[id] )
+
+        # update the outcomes
+        for iP in range(par.num_power):
+            idx = idx_couple(iP)
+    
+            # woman wants to leave
+            if iP < Low_w: 
+                if Sm_at_zero_w > 0: # man happy to shift some bargaining power
+                    for i, key in enumerate(list_couple):
+                        if iP == 0:
+                            list_couple[i][idx] = interp_1d(par.grid_power, list_raw[i], power_at_zero_w)#, Low_w-1) 
+                        else:
+                            list_couple[i][idx] = list_couple[i][idx_couple(0)]; # re-use that the interpolated values are identical
+
+                    if all(x < s for x, s in zip(idx, power_idx.shape)):
+                        power_idx[idx] = Low_w
+                        power[idx] = power_at_zero_w
+                    
+                else: # divorce
+                    for i, key in enumerate(list_couple):
+                        list_couple[i][idx] = list_single[i][idx_single_woman]
+                        list_couple[i][idx] = list_single[i][idx_single_man]
+                    
+                    if all(x < s for x, s in zip(idx, power_idx.shape)):
+                        power_idx[idx] = -1
+                        power[idx] = -1.0
+                
+            # man wants to leave
+            elif iP > Low_m: 
+                if Sw_at_zero_m > 0: # woman happy to shift some bargaining power
+                    for i, key in enumerate(list_couple):
+                        if (iP == Low_m + 1):
+                            list_couple[i][idx] = interp_1d(par.grid_power, list_raw[i], power_at_zero_m, Low_m) 
+                        else:
+                            list_couple[i][idx] = list_couple[i][idx_couple(Low_m + 1)]; # re-use that the interpolated values are identical
+
+                    if all(x < s for x, s in zip(idx, power_idx.shape)):
+                        power_idx[idx] = Low_m
+                        power[idx] = power_at_zero_m
+                    
+                else: # divorce
+                    for i, key in enumerate(list_couple):
+                        list_couple[i][idx] = list_single[i][idx_single_woman]
+                        list_couple[i][idx] = list_single[i][idx_single_man]
+
+                    if all(x < s for x, s in zip(idx, power_idx.shape)):
+                        power_idx[idx] = -1
+                        power[idx] = -1.0
+
+            else: # no-one wants to leave
+                for i, key in enumerate(list_couple):
+                    list_couple[i][idx] = list_raw[i][iP]
+
+                if all(x < s for x, s in zip(idx, power_idx.shape)):
+                    power_idx[idx] = iP
+                    power[idx] = par.grid_power[iP]
 
 
+def check_participation_constraints_other(power_idx, power, Sw, Sm, idx_single_woman, idx_single_man, idx_couple, list_couple, list_raw, list_single, par):
+    
+    # check the participation constraints. Array
+    min_Sw = np.min(Sw)
+    min_Sm = np.min(Sm)
+    max_Sw = np.max(Sw)
+    max_Sm = np.max(Sm)
 
+    if (min_Sw >= 0.0) & (min_Sm >= 0.0): # all values are consistent with marriage
+        for iP in range(par.num_power):
+            idx = idx_couple(iP)
+            for i, key in enumerate(list_couple):
+                list_couple[i][idx] = list_raw[i][iP]
+
+            if all(x < s for x, s in zip(idx, power_idx.shape)):
+                power_idx[idx] = iP
+                power[idx] = par.grid_power[iP]
+            if all(x < s for x, s in zip(idx, power_idx.shape)):
+                power_idx[idx] = iP
+                power[idx] = par.grid_power[iP]
+
+    elif (max_Sw < 0.0) | (max_Sm < 0.0): # no value is consistent with marriage
+        for iP in range(par.num_power):
+            idx = idx_couple(iP)
+            for i, key in enumerate(list_couple):
+                # Debugging prints
+                #print(f"Checking list_couple[{i}][{idx}] and list_single[{i}][{idx_single_woman}]")
+                #print(f"Shapes: list_couple[{i}].shape = {list_couple[i].shape}, list_single[{i}].shape = {list_single[i].shape}")
+                #print(f"indices: idx_single_woman = {idx_single_woman}, idx_single_man = {idx_single_man}, idx = {idx}")
+                
+                # Ensure indices are within valid range
+                if isinstance(idx_single_woman, tuple) and isinstance(idx, tuple):
+                    if all(x < s for x, s in zip(idx_single_woman, list_single[i].shape)) and all(x < s for x, s in zip(idx, list_couple[i].shape)):
+                        list_couple[i][idx] = list_single[i][idx_single_woman]
+                    if all(x < s for x, s in zip(idx_single_man, list_single[i].shape)) and all(x < s for x, s in zip(idx, list_couple[i].shape)):
+                        list_couple[i][idx] = list_single[i][idx_single_man]
+                # Debugging prints
+                #print(f"Checking list_couple[{i}][{idx}] and list_single[{i}][{idx_single_woman}]")
+                #print(f"Shapes: list_couple[{i}].shape = {list_couple[i].shape}, list_single[{i}].shape = {list_single[i].shape}")
+                #print(f"indices: idx_single_woman = {idx_single_woman}, idx_single_man = {idx_single_man}, idx = {idx}")
+                
+                # Ensure indices are within valid range
+                if isinstance(idx_single_woman, tuple) and isinstance(idx, tuple):
+                    if all(x < s for x, s in zip(idx_single_woman, list_single[i].shape)) and all(x < s for x, s in zip(idx, list_couple[i].shape)):
+                        list_couple[i][idx] = list_single[i][idx_single_woman]
+                    if all(x < s for x, s in zip(idx_single_man, list_single[i].shape)) and all(x < s for x, s in zip(idx, list_couple[i].shape)):
+                        list_couple[i][idx] = list_single[i][idx_single_man]
+
+            if all(x < s for x, s in zip(idx, power_idx.shape)):
+                power_idx[idx] = -1
+                power[idx] = -1.0
+            if all(x < s for x, s in zip(idx, power_idx.shape)):
+                power_idx[idx] = -1
+                power[idx] = -1.0
+
+    else: 
+    
+        # find lowest (highest) value with positive surplus for women (men)
+        Low_w = 1 #0 # in case there is no crossing, this will be the correct value
+        Low_m = par.num_power-1-1 #par.num_power-1 # in case there is no crossing, this will be the correct value
+        for iP in range(par.num_power-1):
+            if (Sw[iP]<0) & (Sw[iP+1]>=0):
+                Low_w = iP+1
+                
+            if (Sm[iP]>=0) & (Sm[iP+1]<0):
+                Low_m = iP
+
+        # b. interpolate the surplus of each member at indifference points
+        # women indifference
+        id = Low_w-1
+        denom = (par.grid_power[id+1] - par.grid_power[id])
+        ratio_w = (Sw[id+1] - Sw[id])/denom
+        ratio_m = (Sm[id+1] - Sm[id])/denom
+        power_at_zero_w = par.grid_power[id] - Sw[id]/ratio_w
+        Sm_at_zero_w = Sm[id] + ratio_m*( power_at_zero_w - par.grid_power[id] )
+
+        # men indifference
+        id = Low_m
+        denom = (par.grid_power[id+1] - par.grid_power[id])
+        ratio_w = (Sw[id+1] - Sw[id])/denom
+        ratio_m = (Sm[id+1] - Sm[id])/denom
+        power_at_zero_m = par.grid_power[id] - Sm[id]/ratio_m
+        Sw_at_zero_m = Sw[id] + ratio_w*( power_at_zero_m - par.grid_power[id] )
+
+        # update the outcomes
+        for iP in range(par.num_power):
+            idx = idx_couple(iP)
+    
+            # woman wants to leave
+            if iP < Low_w: 
+                if Sm_at_zero_w > 0: # man happy to shift some bargaining power
+                    for i, key in enumerate(list_couple):
+                        if iP == 0:
+                            list_couple[i][idx] = interp_1d(par.grid_power, list_raw[i], power_at_zero_w)#, Low_w-1) 
+                        else:
+                            list_couple[i][idx] = list_couple[i][idx_couple(0)]; # re-use that the interpolated values are identical
+
+                    if all(x < s for x, s in zip(idx, power_idx.shape)):
+                        power_idx[idx] = Low_w
+                        power[idx] = power_at_zero_w
+                    
+                else: # divorce
+                    for i, key in enumerate(list_couple):
+                        list_couple[i][idx] = list_single[i][idx_single_woman]
+                        list_couple[i][idx] = list_single[i][idx_single_man]
+                    
+                    if all(x < s for x, s in zip(idx, power_idx.shape)):
+                        power_idx[idx] = -1
+                        power[idx] = -1.0
+                
+            # man wants to leave
+            elif iP > Low_m: 
+                if Sw_at_zero_m > 0: # woman happy to shift some bargaining power
+                    for i, key in enumerate(list_couple):
+                        if (iP == Low_m + 1):
+                            list_couple[i][idx] = interp_1d(par.grid_power, list_raw[i], power_at_zero_m, Low_m) 
+                        else:
+                            list_couple[i][idx] = list_couple[i][idx_couple(Low_m + 1)]; # re-use that the interpolated values are identical
+
+                    if all(x < s for x, s in zip(idx, power_idx.shape)):
+                        power_idx[idx] = Low_m
+                        power[idx] = power_at_zero_m
+                    
+                else: # divorce
+                    for i, key in enumerate(list_couple):
+                        list_couple[i][idx] = list_single[i][idx_single_woman]
+                        list_couple[i][idx] = list_single[i][idx_single_man]
+
+                    if all(x < s for x, s in zip(idx, power_idx.shape)):
+                        power_idx[idx] = -1
+                        power[idx] = -1.0
+
+            else: # no-one wants to leave
+                for i, key in enumerate(list_couple):
+                    list_couple[i][idx] = list_raw[i][iP]
+
+                if all(x < s for x, s in zip(idx, power_idx.shape)):
+                    power_idx[idx] = iP
+                    power[idx] = par.grid_power[iP]
 
 
 

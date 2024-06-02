@@ -14,7 +14,21 @@ import UserFunctions as usr
 woman = 1
 man = 2
 
+def check_and_fill_nans(array):
+    if np.isnan(array).any():
+        print(f"NaN values found in the array. Filling NaNs with zeros.")
+        return np.nan_to_num(array)
+    return array
+
 class HouseholdModelClass(EconModelClass):
+    
+    
+    
+    def check_and_fill_nans(array):
+        if np.isnan(array).any():
+            print(f"NaN values found in the array. Filling NaNs with zeros.")
+            return np.nan_to_num(array)
+        return array
     
     def settings(self):
         """ fundamental settings """
@@ -108,6 +122,7 @@ class HouseholdModelClass(EconModelClass):
         par.seed = 9210
         par.simT = par.T
         par.simN = 50_000
+        par.epsilon = 1e-5
 
         # grids        
         par.k_max = 20.0 # maximum point in HC grid
@@ -121,10 +136,14 @@ class HouseholdModelClass(EconModelClass):
         par.p_birth = 0.05
         
     def allocate(self):
+        
+        
+        
         par = self.par
         sol = self.sol
         sim = self.sim
-
+        
+        
         # setup grids
         par.simT = par.T
         self.setup_grids()
@@ -226,17 +245,28 @@ class HouseholdModelClass(EconModelClass):
         sim.init_couple = np.ones(par.simN,dtype=np.bool_)
         sim.init_power_idx = par.num_power//2 * np.ones(par.simN,dtype=np.int_)
         sim.init_love = np.zeros(par.simN)
-        
+    
+
+  
+    
     def setup_grids(self):
         par = self.par
 
-        # Ensure all arrays are correctly shaped
-        par.grid_love = np.atleast_1d(nonlinspace(-par.max_love, par.max_love, par.num_love, 1.1))
-        par.grid_A = np.atleast_1d(nonlinspace(0.0, par.max_A, par.num_A, 1.1))
-        par.kw_grid = np.atleast_1d(nonlinspace(0.0, par.k_max, par.num_k, 1.1))
-        par.km_grid = np.atleast_1d(nonlinspace(0.0, par.k_max, par.num_k, 1.1))
-        par.grid_shock_love = np.atleast_1d(par.grid_shock_love)
-        par.grid_weight_love = np.atleast_1d(par.grid_weight_love)
+        # Ensure all arrays are correctly shaped and free of NaNs
+        par.grid_A = check_and_fill_nans(nonlinspace(0.0, par.max_A, par.num_A, 1.1)).reshape((par.num_A,))
+        par.grid_Aw = check_and_fill_nans(par.div_A_share * par.grid_A).reshape((par.num_A,))
+        par.grid_Am = check_and_fill_nans((1.0 - par.div_A_share) * par.grid_A).reshape((par.num_A,))
+        par.kw_grid = check_and_fill_nans(nonlinspace(0.0, par.k_max, par.num_k, 1.1)).reshape((par.num_k,))
+        par.km_grid = check_and_fill_nans(nonlinspace(0.0, par.k_max, par.num_k, 1.1)).reshape((par.num_k,))
+        par.nw_grid = check_and_fill_nans(np.arange(0, par.num_n)).reshape((par.num_n,))
+        par.nm_grid = check_and_fill_nans(np.arange(0, par.num_n)).reshape((par.num_n,))
+        par.grid_power = check_and_fill_nans(np.linspace(0.0, 1.0, par.num_power)).reshape((par.num_power,))
+        par.grid_love = check_and_fill_nans(np.linspace(-par.max_love, par.max_love, par.num_love)).reshape((par.num_love,))
+        par.grid_shock_love, par.grid_weight_love = quadrature.normal_gauss_hermite(par.sigma_love, par.num_shock_love)
+        par.grid_shock_love = check_and_fill_nans(par.grid_shock_love).reshape((par.num_shock_love,))
+        par.grid_weight_love = check_and_fill_nans(par.grid_weight_love).reshape((par.num_shock_love,))
+        par.grid_Ctot = check_and_fill_nans(nonlinspace(par.epsilon, par.max_Ctot, par.num_Ctot, 1.1)).reshape((par.num_Ctot,))
+        par.grid_Htot = check_and_fill_nans(nonlinspace(par.epsilon, par.max_Htot, par.num_Htot, 1.1)).reshape((par.num_Htot,))
 
         # Ensure grid properties
         print(f"par.grid_love shape: {par.grid_love.shape}")
@@ -245,54 +275,6 @@ class HouseholdModelClass(EconModelClass):
         print(f"par.km_grid shape: {par.km_grid.shape}")
         print(f"par.grid_shock_love shape: {par.grid_shock_love.shape}")
         print(f"par.grid_weight_love shape: {par.grid_weight_love.shape}")
-        
-        # wealth. Single grids are such to avoid interpolation
-        
-
-        par.grid_Aw = par.div_A_share * par.grid_A
-        par.grid_Am = (1.0 - par.div_A_share) * par.grid_A
-
-        # human capital grid
-        
-
-        # number of children grid
-        par.nw_grid = np.arange(0,par.num_n)
-        par.nm_grid = np.arange(0,par.num_n)
-
-
-        # power. non-linear grid with more mass in both tails.
-        odd_num = np.mod(par.num_power,2)
-        first_part = nonlinspace(0.0,0.5,(par.num_power+odd_num)//2,1.3)
-        last_part = np.flip(1.0 - nonlinspace(0.0,0.5,(par.num_power-odd_num)//2 + 1,1.3))[1:]
-        par.grid_power = np.append(first_part,last_part)
-
-        # love grid and shock
-        if par.num_love>1:
-            par.grid_love = np.linspace(-par.max_love,par.max_love,par.num_love)
-        else:
-            par.grid_love = np.array([0.0])
-
-        if par.sigma_love<=1.0e-6:
-            par.num_shock_love = 1
-            par.grid_shock_love,par.grid_weight_love = np.array([0.0]),np.array([1.0])
-
-        else:
-            par.grid_shock_love,par.grid_weight_love = quadrature.normal_gauss_hermite(par.sigma_love,par.num_shock_love)
-
-        # pre-computation
-        #par.grid_Ctot = nonlinspace(1.0e-6,par.max_Ctot,par.num_Ctot,1.1)
-        #par.grid_Htot = nonlinspace(1.0e-6,par.max_Htot,par.num_Htot,1.1)
-        # Adjust non-linear spacing to avoid very small values
-        par.epsilon = 1e-5
-        par.grid_Ctot = nonlinspace(par.epsilon, par.max_Ctot, par.num_Ctot, 1.1)
-        par.grid_Htot = nonlinspace(par.epsilon, par.max_Htot, par.num_Htot, 1.1)
-
-        par.grid_love = np.array(par.grid_love)
-        par.grid_A = np.array(par.grid_A)
-        par.kw_grid = np.array(par.kw_grid)
-        par.km_grid = np.array(par.km_grid)
-        par.grid_shock_love = np.array(par.grid_shock_love)
-        par.grid_weight_love = np.array(par.grid_weight_love)
 
         
 
@@ -442,11 +424,12 @@ class HouseholdModelClass(EconModelClass):
         sol = self.sol
         print(f"Solving for couples at time {t}")
 
+        # Counter for the number of solutions generated
         solution_count = 0
 
         remain_Vw, remain_Vm, remain_Cw_priv, remain_Cm_priv, remain_C_pub = (
             np.ones(par.num_power), np.ones(par.num_power), np.ones(par.num_power), np.ones(par.num_power), np.ones(par.num_power))
-        remain_Hw, remain_Hm = np.ones(par.num_power), np.ones(par.num_power)
+        remain_Hw, remain_Hm = np.ones(par.num_power), np.ones(par.num_power)  # For storing hours worked
 
         Vw_next = None
         Vm_next = None
@@ -455,26 +438,30 @@ class HouseholdModelClass(EconModelClass):
                 for iA, A in enumerate(par.grid_A):
                     for iKw, Kw in enumerate(par.kw_grid):
                         for iKm, Km in enumerate(par.km_grid):
-                            starting_val = None
-                            for iP, power in enumerate(par.grid_power):
-                                if t < (par.T - 1):
-                                    Vw_next = self.sol.Vw_couple[t + 1, iP]
-                                    Vm_next = self.sol.Vm_couple[t + 1, iP]
 
+                            starting_val = None
+                            starting_val_hours = None  # Initialize starting_val_hours
+                            for iP, power in enumerate(par.grid_power):
+                                # Continuation values
+                                if t < (par.T - 1):
+                                    Vw_next = check_and_fill_nans(self.sol.Vw_couple[t + 1, iP])
+                                    Vm_next = check_and_fill_nans(self.sol.Vm_couple[t + 1, iP])
+
+                                # Starting values
                                 if iP > 0:
                                     C_tot_last = remain_Cw_priv[iP - 1] + remain_Cm_priv[iP - 1] + remain_C_pub[iP - 1]
                                     starting_val = np.array([C_tot_last])
+                                    H_tot_last = remain_Hw[iP - 1] + remain_Hm[iP - 1]
+                                    starting_val_hours = np.array([H_tot_last]) 
+                                # Solve problem if remaining married
+                                remain_Cw_priv[iP], remain_Cm_priv[iP], remain_C_pub[iP], remain_Hw[iP], remain_Hm[iP], remain_Vw[iP], remain_Vm[iP] = self.solve_remain_couple(
+                                    t, A, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids, starting_val=starting_val, starting_val_hours=starting_val_hours)
 
-                                try:
-                                    remain_Cw_priv[iP], remain_Cm_priv[iP], remain_C_pub[iP], remain_Hw[iP], remain_Hm[iP], remain_Vw[iP], remain_Vm[iP] = self.solve_remain_couple(
-                                        t, A, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids, starting_val=starting_val)
-                                except Exception as e:
-                                    print(f"Error in solve_remain_couple: {e}")
-                                    remain_Cw_priv[iP], remain_Cm_priv[iP], remain_C_pub[iP], remain_Hw[iP], remain_Hm[iP], remain_Vw[iP], remain_Vm[iP] = [np.nan] * 7
-
+                                # Increment the solution count
                                 solution_count += 1
 
-                                idx_single_woman = (t, iN, iA, iKw)
+                                # Check the participation constraints
+                                idx_single_woman = (t, iN, iA, iKw)  # Index with children and HC - how to handle men and women?
                                 idx_single_man = (t, iN, iA, iKm)
                                 idx_couple = lambda iP: (t, iN, iP, iL, iA, iKw, iKm)
 
@@ -491,6 +478,8 @@ class HouseholdModelClass(EconModelClass):
 
 
 
+
+    
 
 
     def solve_couple_old(self,t):
@@ -556,6 +545,14 @@ class HouseholdModelClass(EconModelClass):
                             
 
 
+    import numpy as np
+    from scipy import optimize
+
+
+
+
+    from consav.linear_interp import interp_3d_vec
+
     def value_of_choice_couple(self, C_tot, H_tot, t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids):
         sol = self.sol
         par = self.par
@@ -563,24 +560,11 @@ class HouseholdModelClass(EconModelClass):
         love = par.grid_love[iL]
 
         # Current utility from consumption allocation
-        try:
-            Cw_priv, Cm_priv, C_pub = intraperiod_allocation(C_tot, iP, sol, par)
-        except Exception as e:
-            print(f"Error in intraperiod_allocation: {e}")
-            return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+        Cw_priv, Cm_priv, C_pub = intraperiod_allocation(C_tot, iP, sol, par)
+        Hw, Hm = intraperiod_allocation_hours(H_tot, iP, sol, kids, par)
 
-        try:
-            Hw, Hm = intraperiod_allocation_hours(H_tot, iP, sol, kids, par)
-        except Exception as e:
-            print(f"Error in intraperiod_allocation_hours: {e}")
-            return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
-
-        try:
-            Vw = usr.util(Cw_priv, C_pub, Hw, woman, kids, par, love)
-            Vm = usr.util(Cm_priv, C_pub, Hm, man, kids, par, love)
-        except Exception as e:
-            print(f"Error in usr.util: {e}")
-            return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+        Vw = usr.util(Cw_priv, C_pub, Hw, woman, kids, par, love)
+        Vm = usr.util(Cm_priv, C_pub, Hm, man, kids, par, love)
 
         # Add continuation value
         if t < (par.T - 1):
@@ -588,40 +572,44 @@ class HouseholdModelClass(EconModelClass):
             income_man = wage_func(self, Km, man) * Hm
             total_income = income_woman + income_man
 
-            a_next = assets + total_income - C_tot  # Next period's assets
-            k_next_woman = Kw + Hw  # Next period's human capital for woman
-            k_next_man = Km + Hm  # Next period's human capital for man
+            a_next = assets + total_income - C_tot
+            k_next_woman = Kw + Hw
+            k_next_man = Km + Hm
 
-            a_next_arr = np.array([a_next]) if np.isscalar(a_next) else a_next
-            k_next_woman_arr = np.array([k_next_woman]) if np.isscalar(k_next_woman) else k_next_woman
-            k_next_man_arr = np.array([k_next_man]) if np.isscalar(k_next_man) else k_next_man
+            a_next_arr = np.full(par.num_shock_love, a_next, dtype=np.float64)
+            k_next_woman_arr = np.full(par.num_shock_love, k_next_woman, dtype=np.float64)
+            k_next_man_arr = np.full(par.num_shock_love, k_next_man, dtype=np.float64)
 
-            Vw_next_arr = np.array(Vw_next)
-            Vm_next_arr = np.array(Vm_next)
-
-            love_next_vec = love + par.grid_shock_love
+            love_next_vec = np.array([love + shock for shock in par.grid_shock_love], dtype=np.float64)
 
             try:
-                # Ensure that all arrays are at least 1D
-                love_next_vec = np.atleast_1d(love_next_vec)
-                a_next_arr = np.atleast_1d(a_next_arr)
-                k_next_woman_arr = np.atleast_1d(k_next_woman_arr)
-                k_next_man_arr = np.atleast_1d(k_next_man_arr)
-                Vw_next_arr = np.atleast_1d(Vw_next_arr)
-                Vm_next_arr = np.atleast_1d(Vm_next_arr)
-                
-                # Print shapes for debugging
-                print(f"love_next_vec shape: {love_next_vec.shape}")
-                print(f"a_next_arr shape: {a_next_arr.shape}")
-                print(f"k_next_woman_arr shape: {k_next_woman_arr.shape}")
-                print(f"k_next_man_arr shape: {k_next_man_arr.shape}")
-                print(f"Vw_next_arr shape: {Vw_next_arr.shape}")
-                print(f"Vm_next_arr shape: {Vm_next_arr.shape}")
+                # Ensure arrays are writable and contiguous
+                love_next_vec = np.ascontiguousarray(love_next_vec, dtype=np.float64)
+                a_next_arr = np.ascontiguousarray(a_next_arr, dtype=np.float64)
+                k_next_woman_arr = np.ascontiguousarray(k_next_woman_arr, dtype=np.float64)
+                k_next_man_arr = np.ascontiguousarray(k_next_man_arr, dtype=np.float64)
 
-                print(f"interp_3d_vec inputs for Vw: love={love_next_vec.shape}, a={a_next_arr.shape}, k={k_next_woman_arr.shape}")
-                interp_3d_vec(par.grid_love, par.grid_A, par.kw_grid, Vw_next_arr, love_next_vec, a_next_arr, k_next_woman_arr, sol.Vw_plus_vec)
-                print(f"interp_3d_vec inputs for Vm: love={love_next_vec.shape}, a={a_next_arr.shape}, k={k_next_man_arr.shape}")
-                interp_3d_vec(par.grid_love, par.grid_A, par.km_grid, Vm_next_arr, love_next_vec, a_next_arr, k_next_man_arr, sol.Vm_plus_vec)
+                par.grid_love = np.ascontiguousarray(par.grid_love, dtype=np.float64)
+                par.grid_A = np.ascontiguousarray(par.grid_A, dtype=np.float64)
+                par.kw_grid = np.ascontiguousarray(par.kw_grid, dtype=np.float64)
+                par.km_grid = np.ascontiguousarray(par.km_grid, dtype=np.float64)
+                par.grid_weight_love = np.ascontiguousarray(par.grid_weight_love, dtype=np.float64)
+
+                Vw_next = np.ascontiguousarray(Vw_next, dtype=np.float64)
+                Vm_next = np.ascontiguousarray(Vm_next, dtype=np.float64)
+
+                print("Shapes before interp_3d_vec:")
+                print(f"par.grid_love: {par.grid_love.shape}")
+                print(f"par.grid_A: {par.grid_A.shape}")
+                print(f"par.kw_grid: {par.kw_grid.shape}")
+                print(f"Vw_next: {Vw_next.shape}")
+                print(f"love_next_vec: {love_next_vec.shape}")
+                print(f"a_next_arr: {a_next_arr.shape}")
+                print(f"k_next_woman_arr: {k_next_woman_arr.shape}")
+                print(f"sol.Vw_plus_vec: {sol.Vw_plus_vec.shape}")
+
+                interp_3d_vec(par.grid_love, par.grid_A, par.kw_grid, Vw_next, love_next_vec, a_next_arr, k_next_woman_arr, sol.Vw_plus_vec)
+                interp_3d_vec(par.grid_love, par.grid_A, par.km_grid, Vm_next, love_next_vec, a_next_arr, k_next_man_arr, sol.Vm_plus_vec)
             except Exception as e:
                 print(f"Error in interp_3d_vec: {e}")
                 return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
@@ -634,8 +622,8 @@ class HouseholdModelClass(EconModelClass):
                 EVm_plus_birth = EVm_plus_no_birth
             else:
                 kids_next = kids + 1
-                Vw_next_with_birth = sol.Vw_couple[t + 1, kids_next]
-                Vm_next_with_birth = sol.Vm_couple[t + 1, kids_next]
+                Vw_next_with_birth = np.ascontiguousarray(sol.Vw_couple[t + 1, kids_next], dtype=np.float64)
+                Vm_next_with_birth = np.ascontiguousarray(sol.Vm_couple[t + 1, kids_next], dtype=np.float64)
 
                 try:
                     interp_3d_vec(par.grid_love, par.grid_A, par.kw_grid, Vw_next_with_birth, love_next_vec, a_next_arr, k_next_woman_arr, sol.Vw_plus_vec)
@@ -659,52 +647,62 @@ class HouseholdModelClass(EconModelClass):
 
 
 
-
-
-
-
-
-    def solve_remain_couple(self, t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids, starting_val=None):
+    def solve_remain_couple(self, t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids, starting_val=None, starting_val_hours=None):
         par = self.par
+        sol = self.sol
 
-        if t == (par.T - 1):  # Terminal period
-            C_tot = assets
-            obj = lambda x: -self.value_of_choice_couple(C_tot, x[0], t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids)[0]
-            x0 = np.array([0.4]) if starting_val is None else starting_val
-            bounds = ((1.0e-6, np.inf),)
+        # Define default values for C_start and H_start if they don't exist in par
+        if not hasattr(par, 'C_start'):
+            par.C_start = 0.4  # Default value, set appropriately
+        if not hasattr(par, 'H_start'):
+            par.H_start = 0.4  # Default value, set appropriately
+
+        # Objective function to minimize
+        def obj(x):
+            C_tot, H_tot = x
+            Val, _, _, _, _, _, _, _ = self.value_of_choice_couple(C_tot, H_tot, t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids)
+            return -Val
+
+        # Initial guess
+        if starting_val is None:
+            C_tot_guess = par.C_start
         else:
-            obj = lambda x: -self.value_of_choice_couple(x[0], x[1], t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids)[0]
-            x0 = np.array([0.4, 0.4]) if starting_val is None else starting_val
-            bounds = ((1.0e-6, np.inf), (1.0e-6, np.inf))
+            C_tot_guess = np.array(starting_val).flatten().item()
 
-        if np.isnan(x0).any():
-            x0 = np.array([0.4, 0.4]) if t != (par.T - 1) else np.array([0.4])
+        if starting_val_hours is None:
+            H_tot_guess = par.H_start
+        else:
+            H_tot_guess = np.array(starting_val_hours).flatten().item()
 
-        if t <= 8:
-            print(f"Solving for t={t}, assets={assets}, Kw={Kw}, Km={Km}, iL={iL}, iP={iP}, power={power}, kids={kids}")
-            print(f"Initial guess x0: {x0}")
-            print(f"Bounds: {bounds}")
+        x0 = np.array([C_tot_guess, H_tot_guess])
 
+        if x0.ndim != 1:
+            raise ValueError("'x0' must only have one dimension.")
+        
         try:
-            res = optimize.minimize(obj, x0, bounds=bounds, method='SLSQP')
+            res = optimize.minimize(obj, x0, bounds=((1.0e-6, np.inf), (1.0e-6, np.inf)), method='SLSQP')
         except Exception as e:
-            print(f"Optimization error: {e}")
+            print(f"Error in optimization: {e}")
             return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
 
-        if not res.success:
-            print(f"Optimization result x: {res.x}")
-            print(f"Optimization success: {res.success}, message: {res.message}")
-
-        C_tot = res.x[0] if t != (par.T - 1) else assets
-        H_tot = res.x[1] if t != (par.T - 1) else res.x[0]
-
-        try:
-            Val, Cw_priv, Cm_priv, C_pub, Hw, Hm, Vw, Vm = self.value_of_choice_couple(C_tot, H_tot, t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids)
-        except Exception as e:
-            print(f"Error in value_of_choice_couple: {e}")
-            return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+        C_tot = res.x[0]
+        H_tot = res.x[1]
+        Val, Cw_priv, Cm_priv, C_pub, Hw, Hm, Vw, Vm = self.value_of_choice_couple(C_tot, H_tot, t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids)
 
         return Cw_priv, Cm_priv, C_pub, Hw, Hm, Vw, Vm
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
