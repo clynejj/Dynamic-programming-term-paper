@@ -187,6 +187,7 @@ class HouseholdModelClass(EconModelClass):
         sol.k_next_man_vec = np.zeros(par.num_shock_love)
         sol.Vw_plus_vec = np.zeros(par.num_shock_love) 
         sol.Vm_plus_vec = np.zeros(par.num_shock_love) 
+        sol.n_next_vec = np.zeros(par.num_shock_love)
 
 
         # pre-compute optimal consumption allocation 
@@ -254,6 +255,7 @@ class HouseholdModelClass(EconModelClass):
         # number of children grid
         par.nw_grid = np.arange(0,par.num_n)
         par.nm_grid = np.arange(0,par.num_n)
+        par.grid_n = np.arange(0,par.num_n)
 
 
         # power. non-linear grid with more mass in both tails.
@@ -437,6 +439,14 @@ class HouseholdModelClass(EconModelClass):
         # Current utility from consumption allocation
         Cw_priv, Cm_priv, C_pub = intraperiod_allocation(C_tot, iP, sol, par)
         Hw, Hm = intraperiod_allocation_hours(H_tot, iP, sol, kids, par)
+        
+       
+        
+        # Check for large values and clip if necessary
+        max_hours = 100  # example max value, adjust as needed
+        Hw = np.clip(Hw, 0, max_hours)
+        Hm = np.clip(Hm, 0, max_hours)
+        
         Vw = usr.util(Cw_priv, C_pub, Hw, woman, kids, par, love)
         Vm = usr.util(Cm_priv, C_pub, Hm, man, kids, par, love)
 
@@ -455,19 +465,14 @@ class HouseholdModelClass(EconModelClass):
             sol.k_next_woman_vec[:] = Kw + Hw  # Next period's human capital for woman
             sol.k_next_man_vec[:] = Km + Hm  # Next period's human capital for man
 
-            print(f"type love_next_vec: {type(love_next_vec)}, love_next_vec: {love_next_vec}, shape love_next_vec: {np.shape(love_next_vec)}")
-            print(f"type sol.a_next_vec: {type(sol.a_next_vec)}, sol.a_next_vec: {sol.a_next_vec}, shape sol.a_next_vec: {np.shape(sol.a_next_vec)}")
-            print(f"type sol.k_next_woman_vec: {type(sol.k_next_woman_vec)}, sol.k_next_woman_vec: {sol.k_next_woman_vec}, shape sol.k_next_woman_vec: {np.shape(sol.k_next_woman_vec)}")
-            print(f"type sol.k_next_man_vec: {type(sol.k_next_man_vec)}, sol.k_next_man_vec: {sol.k_next_man_vec}, shape sol.k_next_man_vec: {np.shape(sol.k_next_man_vec)}")
-            print(f"Vw_next: {Vw_next}, shape Vw_next: {np.shape(Vw_next)}")
-            print(f"Vm_next: {Vm_next}, shape Vm_next: {np.shape(Vm_next)}")
 
             # Perform 5D interpolation
+            grid_n_float64 = par.grid_n.astype(np.float64)  # Cast to float64
             for i in range(num_shocks):
-                sol.Vw_plus_vec[i] = linear_interp.interp_5d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid, par.grid_shock_love,
-                                                Vw_next, love_next_vec[i], sol.a_next_vec[i], sol.k_next_woman_vec[i], sol.k_next_man_vec[i], sol.grid_shock_love[i])
-                sol.Vm_plus_vec[i] = linear_interp.interp_5d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid, par.grid_shock_love,
-                                                Vm_next, love_next_vec[i], sol.a_next_vec[i], sol.k_next_woman_vec[i], sol.k_next_man_vec[i], sol.grid_shock_love[i])
+                sol.Vw_plus_vec[i] = linear_interp.interp_5d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid, grid_n_float64,
+                                                Vw_next, love_next_vec[i], sol.a_next_vec[i], sol.k_next_woman_vec[i], sol.k_next_man_vec[i], sol.n_next_vec[i])
+                sol.Vm_plus_vec[i] = linear_interp.interp_5d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid, grid_n_float64,
+                                                Vm_next, love_next_vec[i], sol.a_next_vec[i], sol.k_next_woman_vec[i], sol.k_next_man_vec[i], sol.n_next_vec[i])
 
             EVw_plus_no_birth = sol.Vw_plus_vec @ par.grid_weight_love
             EVm_plus_no_birth = sol.Vm_plus_vec @ par.grid_weight_love
@@ -485,10 +490,87 @@ class HouseholdModelClass(EconModelClass):
                 Vm_next_with_birth = sol.Vm_couple[t + 1, kids_next]
 
                 for i in range(num_shocks):
-                    sol.Vw_plus_vec[i] = linear_interp.interp_5d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid, par.grid_shock_love,
-                                                    Vw_next_with_birth, love_next_vec[i], sol.a_next_vec[i], sol.k_next_woman_vec[i], sol.k_next_man_vec[i], sol.grid_shock_love[i])
-                    sol.Vm_plus_vec[i] = linear_interp.interp_5d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid, par.grid_shock_love,
-                                                    Vm_next_with_birth, love_next_vec[i], sol.a_next_vec[i], sol.k_next_woman_vec[i], sol.k_next_man_vec[i], sol.grid_shock_love[i])
+                    sol.Vw_plus_vec[i] = linear_interp.interp_5d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid, grid_n_float64,
+                                                    Vw_next_with_birth, love_next_vec[i], sol.a_next_vec[i], sol.k_next_woman_vec[i], sol.k_next_man_vec[i], sol.n_next_vec[i])
+                    sol.Vm_plus_vec[i] = linear_interp.interp_5d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid, grid_n_float64,
+                                                    Vm_next_with_birth, love_next_vec[i], sol.a_next_vec[i], sol.k_next_woman_vec[i], sol.k_next_man_vec[i], sol.n_next_vec[i])
+
+                EVw_plus_birth = sol.Vw_plus_vec @ par.grid_weight_love
+                EVm_plus_birth = sol.Vm_plus_vec @ par.grid_weight_love
+
+            EVw_plus = par.p_birth * EVw_plus_birth + (1 - par.p_birth) * EVw_plus_no_birth
+            EVm_plus = par.p_birth * EVm_plus_birth + (1 - par.p_birth) * EVm_plus_no_birth
+
+            Vw += par.beta * EVw_plus
+            Vm += par.beta * EVm_plus
+
+        # Return
+        Val = power * Vw + (1.0 - power) * Vm
+        return Val, Cw_priv, Cm_priv, C_pub, Hw, Hm, Vw, Vm
+
+
+
+    def value_of_choice_couple_overflow(self, C_tot, H_tot, t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids):
+        sol = self.sol
+        par = self.par
+
+        love = par.grid_love[iL]
+        # Current utility from consumption allocation
+        Cw_priv, Cm_priv, C_pub = intraperiod_allocation(C_tot, iP, sol, par)
+        Hw, Hm = intraperiod_allocation_hours(H_tot, iP, sol, kids, par)
+        Vw = usr.util(Cw_priv, C_pub, Hw, woman, kids, par, love)
+        Vm = usr.util(Cm_priv, C_pub, Hm, man, kids, par, love)
+
+        # Add continuation value
+        if t < (par.T - 1):
+            # Calculate income based on work hours and human capital
+            income_woman = wage_func(self, Kw, woman) * Hw
+            income_man = wage_func(self, Km, man) * Hm
+            total_income = income_woman + income_man
+
+            # Ensure all next period variables are vectors of the same length
+            love_next_vec = love + par.grid_shock_love
+            num_shocks = love_next_vec.size
+
+            sol.a_next_vec[:] = assets + total_income - C_tot  # Next period's assets
+            sol.k_next_woman_vec[:] = Kw + Hw  # Next period's human capital for woman
+            sol.k_next_man_vec[:] = Km + Hm  # Next period's human capital for man
+
+            #print(f"type love_next_vec: {type(love_next_vec)}, love_next_vec: {love_next_vec}, shape love_next_vec: {np.shape(love_next_vec)}")
+            #print(f"type sol.a_next_vec: {type(sol.a_next_vec)}, sol.a_next_vec: {sol.a_next_vec}, shape sol.a_next_vec: {np.shape(sol.a_next_vec)}")
+            #print(f"type sol.k_next_woman_vec: {type(sol.k_next_woman_vec)}, sol.k_next_woman_vec: {sol.k_next_woman_vec}, shape sol.k_next_woman_vec: {np.shape(sol.k_next_woman_vec)}")
+            #print(f"type sol.k_next_man_vec: {type(sol.k_next_man_vec)}, sol.k_next_man_vec: {sol.k_next_man_vec}, shape sol.k_next_man_vec: {np.shape(sol.k_next_man_vec)}")
+            #print(f"Vw_next: {Vw_next}, shape Vw_next: {np.shape(Vw_next)}")
+            #print(f"Vm_next: {Vm_next}, shape Vm_next: {np.shape(Vm_next)}")
+
+            # Perform 5D interpolation
+            grid_n_float64 = par.grid_n.astype(np.float64)  # Cast to float64
+            for i in range(num_shocks):
+                sol.Vw_plus_vec[i] = linear_interp.interp_5d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid, grid_n_float64,
+                                                Vw_next, love_next_vec[i], sol.a_next_vec[i], sol.k_next_woman_vec[i], sol.k_next_man_vec[i], sol.n_next_vec[i])
+                sol.Vm_plus_vec[i] = linear_interp.interp_5d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid, grid_n_float64,
+                                                Vm_next, love_next_vec[i], sol.a_next_vec[i], sol.k_next_woman_vec[i], sol.k_next_man_vec[i], sol.n_next_vec[i])
+
+            EVw_plus_no_birth = sol.Vw_plus_vec @ par.grid_weight_love
+            EVm_plus_no_birth = sol.Vm_plus_vec @ par.grid_weight_love
+
+            # Child-birth considerations
+            if kids >= (par.num_n - 1):
+                # Cannot have more children
+                EVw_plus_birth = EVw_plus_no_birth
+                EVm_plus_birth = EVm_plus_no_birth
+            else:
+                kids_next = kids + 1
+
+                # Interpolate future values for the next period with a new child
+                Vw_next_with_birth = sol.Vw_couple[t + 1, kids_next]
+                Vm_next_with_birth = sol.Vm_couple[t + 1, kids_next]
+
+                for i in range(num_shocks):
+                    sol.Vw_plus_vec[i] = linear_interp.interp_5d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid, grid_n_float64,
+                                                    Vw_next_with_birth, love_next_vec[i], sol.a_next_vec[i], sol.k_next_woman_vec[i], sol.k_next_man_vec[i], sol.n_next_vec[i])
+                    sol.Vm_plus_vec[i] = linear_interp.interp_5d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid, grid_n_float64,
+                                                    Vm_next_with_birth, love_next_vec[i], sol.a_next_vec[i], sol.k_next_woman_vec[i], sol.k_next_man_vec[i], sol.n_next_vec[i])
 
                 EVw_plus_birth = sol.Vw_plus_vec @ par.grid_weight_love
                 EVm_plus_birth = sol.Vm_plus_vec @ par.grid_weight_love
@@ -574,229 +656,6 @@ class HouseholdModelClass(EconModelClass):
                                     sol.Vm_remain_couple[idx] = remain_Vm[iP]
 
     
-    def value_of_choice_couple_lunchtime(self, C_tot, H_tot, t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids):
-        sol = self.sol
-        par = self.par
-
-        love = par.grid_love[iL]
-        # Current utility from consumption allocation
-        Cw_priv, Cm_priv, C_pub = intraperiod_allocation(C_tot, iP, sol, par)
-        Hw, Hm = intraperiod_allocation_hours(H_tot, iP, sol, kids, par)
-        Vw = usr.util(Cw_priv, C_pub, Hw, woman, kids, par, love)
-        Vm = usr.util(Cm_priv, C_pub, Hm, man, kids, par, love)
-
-        # Add continuation value
-        if t < (par.T - 1):
-            # Calculate income based on work hours and human capital
-            income_woman = wage_func(self, Kw, woman) * Hw
-            income_man = wage_func(self, Km, man) * Hm
-            total_income = income_woman + income_man
-
-            # Ensure all next period variables are vectors of the same length
-            love_next_vec = love + par.grid_shock_love
-            num_shocks = love_next_vec.size
-
-            # Initialize arrays using [:] to update in place
-            sol.a_next_vec[:] = assets + total_income - C_tot  # Next period's assets
-            sol.k_next_woman_vec[:] = Kw + Hw  # Next period's human capital for woman
-            sol.k_next_man_vec[:] = Km + Hm  # Next period's human capital for man
-
-            print(f"type love_next_vec: {type(love_next_vec)}, love_next_vec: {love_next_vec}, shape love_next_vec: {np.shape(love_next_vec)}")
-            print(f"type sol.a_next_vec: {type(sol.a_next_vec)}, sol.a_next_vec: {sol.a_next_vec}, shape sol.a_next_vec: {np.shape(sol.a_next_vec)}")
-            print(f"type sol.k_next_woman_vec: {type(sol.k_next_woman_vec)}, sol.k_next_woman_vec: {sol.k_next_woman_vec}, shape sol.k_next_woman_vec: {np.shape(sol.k_next_woman_vec)}")
-            print(f"type sol.k_next_man_vec: {type(sol.k_next_man_vec)}, sol.k_next_man_vec: {sol.k_next_man_vec}, shape sol.k_next_man_vec: {np.shape(sol.k_next_man_vec)}")
-            print(f"Vw_next: {Vw_next}, shape Vw_next: {np.shape(Vw_next)}")
-            print(f"Vm_next: {Vm_next}, shape Vm_next: {np.shape(Vm_next)}")
-
-            # Ensure the grid inputs are 1D arrays
-            if len(par.grid_love.shape) != 1 or len(par.grid_A.shape) != 1 or len(par.kw_grid.shape) != 1 or len(par.km_grid.shape) != 1:
-                raise ValueError("Grid inputs to interp_3d_vec must be 1D arrays.")
-
-            # Ensure the value array inputs are 5D arrays
-            if len(Vw_next.shape) != 5 or len(Vm_next.shape) != 5:
-                raise ValueError("Value inputs to interp_3d_vec must be 5D arrays.")
-
-            # Perform interpolation
-            interp_3d_vec(par.grid_love, par.grid_A, par.kw_grid, Vw_next, love_next_vec, sol.a_next_vec, sol.k_next_woman_vec, sol.Vw_plus_vec)
-            interp_3d_vec(par.grid_love, par.grid_A, par.km_grid, Vm_next, love_next_vec, sol.a_next_vec, sol.k_next_man_vec, sol.Vm_plus_vec)
-
-            EVw_plus_no_birth = sol.Vw_plus_vec @ par.grid_weight_love
-            EVm_plus_no_birth = sol.Vm_plus_vec @ par.grid_weight_love
-
-            # Child-birth considerations
-            if kids >= (par.num_n - 1):
-                # Cannot have more children
-                EVw_plus_birth = EVw_plus_no_birth
-                EVm_plus_birth = EVm_plus_no_birth
-            else:
-                kids_next = kids + 1
-
-                # Interpolate future values for the next period with a new child
-                Vw_next_with_birth = sol.Vw_couple[t + 1, kids_next]
-                Vm_next_with_birth = sol.Vm_couple[t + 1, kids_next]
-
-                interp_3d_vec(par.grid_love, par.grid_A, par.kw_grid, Vw_next_with_birth, love_next_vec, sol.a_next_vec, sol.k_next_woman_vec, sol.Vw_plus_vec)
-                interp_3d_vec(par.grid_love, par.grid_A, par.km_grid, Vm_next_with_birth, love_next_vec, sol.a_next_vec, sol.k_next_man_vec, sol.Vm_plus_vec)
-
-                EVw_plus_birth = sol.Vw_plus_vec @ par.grid_weight_love
-                EVm_plus_birth = sol.Vm_plus_vec @ par.grid_weight_love
-
-            EVw_plus = par.p_birth * EVw_plus_birth + (1 - par.p_birth) * EVw_plus_no_birth
-            EVm_plus = par.p_birth * EVm_plus_birth + (1 - par.p_birth) * EVm_plus_no_birth
-
-            Vw += par.beta * EVw_plus
-            Vm += par.beta * EVm_plus
-
-        # Return
-        Val = power * Vw + (1.0 - power) * Vm
-        return Val, Cw_priv, Cm_priv, C_pub, Hw, Hm, Vw, Vm
-
-
-
-    def value_of_choice_couple_tiles(self, C_tot, H_tot, t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids):
-        
-        sol = self.sol
-        par = self.par
-
-        love = par.grid_love[iL]
-        # Current utility from consumption allocation
-        Cw_priv, Cm_priv, C_pub = intraperiod_allocation(C_tot, iP, sol, par)
-        Hw, Hm = intraperiod_allocation_hours(H_tot, iP, sol, kids, par)
-        Vw = usr.util(Cw_priv, C_pub, Hw, woman, kids, par, love)
-        Vm = usr.util(Cm_priv, C_pub, Hm, man, kids, par, love)
-
-        # Add continuation value
-        if t < (par.T - 1):
-            # Calculate income based on work hours and human capital
-            income_woman = wage_func(self, Kw, woman) * Hw
-            income_man = wage_func(self, Km, man) * Hm
-            total_income = income_woman + income_man
-
-            # Ensure all next period variables are vectors of the same length
-            love_next_vec = love + par.grid_shock_love
-            num_shocks = love_next_vec.size
-
-            sol.a_next_vec[:] = np.tile(num_shocks, assets + total_income - C_tot)  # Next period's assets
-            sol.k_next_woman_vec[:] = np.tile(num_shocks, Kw + Hw)  # Next period's human capital for woman
-            sol.k_next_man_vec[:] = np.tile(num_shocks, Km + Hm)  # Next period's human capital for man
-
-            print(f"type love_next_vec: {type(love_next_vec)}, love_next_vec: {love_next_vec}, shape love_next_vec: {np.shape(love_next_vec)}")
-            print(f"type sol.a_next_vec: {type(sol.a_next_vec)}, sol.a_next_vec: {sol.a_next_vec}, shape sol.a_next_vec: {np.shape(sol.a_next_vec)}")
-            print(f"type sol.k_next_woman_vec: {type(sol.k_next_woman_vec)}, sol.k_next_woman_vec: {sol.k_next_woman_vec}, shape sol.k_next_woman_vec: {np.shape(sol.k_next_woman_vec)}")
-            print(f"type sol.k_next_man_vec: {type(sol.k_next_man_vec)}, sol.k_next_man_vec: {sol.k_next_man_vec}, shape sol.k_next_man_vec: {np.shape(sol.k_next_man_vec)}")
-            #print(f"Vw_next: {Vw_next}, shape Vw_next: {np.shape(Vw_next)}")
-            #print(f"Vm_next: {Vm_next}, shape Vm_next: {np.shape(Vm_next)}")
-
-            # Perform interpolation
-            interp_3d_vec(par.grid_love, par.grid_A, par.kw_grid, Vw_next, love_next_vec, sol.a_next_vec, sol.k_next_woman_vec, sol.Vw_plus_vec)
-            interp_3d_vec(par.grid_love, par.grid_A, par.km_grid, Vm_next, love_next_vec, sol.a_next_vec, sol.k_next_man_vec, sol.Vm_plus_vec)
-
-            EVw_plus_no_birth = sol.Vw_plus_vec @ par.grid_weight_love
-            EVm_plus_no_birth = sol.Vm_plus_vec @ par.grid_weight_love
-
-            # Child-birth considerations
-            if kids >= (par.num_n - 1):
-                # Cannot have more children
-                EVw_plus_birth = EVw_plus_no_birth
-                EVm_plus_birth = EVm_plus_no_birth
-            else:
-                kids_next = kids + 1
-
-                # Interpolate future values for the next period with a new child
-                Vw_next_with_birth = sol.Vw_couple[t + 1, kids_next]
-                Vm_next_with_birth = sol.Vm_couple[t + 1, kids_next]
-
-                interp_3d_vec(par.grid_love, par.grid_A, par.kw_grid, Vw_next_with_birth, love_next_vec, sol.a_next_vec, sol.k_next_woman_vec, sol.Vw_plus_vec)
-                interp_3d_vec(par.grid_love, par.grid_A, par.km_grid, Vm_next_with_birth, love_next_vec, sol.a_next_vec, sol.k_next_man_vec, sol.Vm_plus_vec)
-
-                EVw_plus_birth = sol.Vw_plus_vec @ par.grid_weight_love
-                EVm_plus_birth = sol.Vm_plus_vec @ par.grid_weight_love
-
-            EVw_plus = par.p_birth * EVw_plus_birth + (1 - par.p_birth) * EVw_plus_no_birth
-            EVm_plus = par.p_birth * EVm_plus_birth + (1 - par.p_birth) * EVm_plus_no_birth
-
-            Vw += par.beta * EVw_plus
-            Vm += par.beta * EVm_plus
-
-        # Return
-        Val = power * Vw + (1.0 - power) * Vm
-        return Val, Cw_priv, Cm_priv, C_pub, Hw, Hm, Vw, Vm
-
-
-
-
-
-    def value_of_choice_couple_other(self, C_tot, H_tot, t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids):
-        sol = self.sol
-        par = self.par
-
-        love = par.grid_love[iL]
-        #print(f"Inputs - C_tot: {C_tot}, H_tot: {H_tot}, t: {t}, assets: {assets}, Kw: {Kw}, Km: {Km}, iL: {iL}, iP: {iP}, power: {power}, kids: {kids}")
-        # Current utility from consumption allocation
-        Cw_priv, Cm_priv, C_pub = intraperiod_allocation(C_tot, iP, sol, par)
-        Hw, Hm = intraperiod_allocation_hours(H_tot, iP, sol, kids, par)
-        #print(f"Cw_priv: {Cw_priv}, Cm_priv: {Cm_priv}, C_pub: {C_pub}, Hw: {Hw}, Hm: {Hm}")
-        Vw = usr.util(Cw_priv, C_pub, Hw, woman, kids, par, love)
-        Vm = usr.util(Cm_priv, C_pub, Hm, man, kids, par, love)
-
-        # Add continuation value
-        if t < (par.T - 1):
-            # Calculate income based on work hours and human capital
-            income_woman = wage_func(self, Kw, woman) * Hw
-            income_man = wage_func(self, Km, man) * Hm
-            total_income = income_woman + income_man
-
-            a_next = assets + total_income - C_tot  # Next period's assets
-            k_next_woman = Kw + Hw  # Next period's human capital for woman
-            k_next_man = Km + Hm  # Next period's human capital for man
-
-            # Ensure variables are numpy arrays
-            a_next_arr = np.array([a_next]) if np.isscalar(a_next) else a_next
-            k_next_woman_arr = np.array([k_next_woman]) if np.isscalar(k_next_woman) else k_next_woman
-            k_next_man_arr = np.array([k_next_man]) if np.isscalar(k_next_man) else k_next_man
-
-            # Ensure Vw_next and Vm_next are 3D numpy arrays
-            Vw_next_arr = np.array(Vw_next)
-            Vm_next_arr = np.array(Vm_next)
-
-            love_next_vec = love + par.grid_shock_love
-
-            # Perform interpolation
-            interp_3d_vec(par.grid_love, par.grid_A, par.kw_grid, Vw_next_arr, love_next_vec, a_next_arr, k_next_woman_arr, sol.Vw_plus_vec)
-            interp_3d_vec(par.grid_love, par.grid_A, par.km_grid, Vm_next_arr, love_next_vec, a_next_arr, k_next_man_arr, sol.Vm_plus_vec)
-
-            EVw_plus_no_birth = sol.Vw_plus_vec @ par.grid_weight_love
-            EVm_plus_no_birth = sol.Vm_plus_vec @ par.grid_weight_love
-            print(f"EVw_plus_no_birth: {EVw_plus_no_birth}, EVm_plus_no_birth: {EVm_plus_no_birth}")
-            # Child-birth considerations
-            if kids >= (par.num_n - 1):
-                # Cannot have more children
-                EVw_plus_birth = EVw_plus_no_birth
-                EVm_plus_birth = EVm_plus_no_birth
-            else:
-                kids_next = kids + 1
-
-                # Interpolate future values for the next period with a new child
-                Vw_next_with_birth = sol.Vw_couple[t + 1, kids_next]
-                Vm_next_with_birth = sol.Vm_couple[t + 1, kids_next]
-
-                interp_3d_vec(par.grid_love, par.grid_A, par.kw_grid, Vw_next_with_birth, love_next_vec, a_next_arr, k_next_woman_arr, sol.Vw_plus_vec)
-                interp_3d_vec(par.grid_love, par.grid_A, par.km_grid, Vm_next_with_birth, love_next_vec, a_next_arr, k_next_man_arr, sol.Vm_plus_vec)
-
-                EVw_plus_birth = sol.Vw_plus_vec @ par.grid_weight_love
-                EVm_plus_birth = sol.Vm_plus_vec @ par.grid_weight_love
-
-                print(f"EVw_plus_birth: {EVw_plus_birth}, EVm_plus_birth: {EVm_plus_birth}")
-
-            EVw_plus = par.p_birth * EVw_plus_birth + (1 - par.p_birth) * EVw_plus_no_birth
-            EVm_plus = par.p_birth * EVm_plus_birth + (1 - par.p_birth) * EVm_plus_no_birth
-
-            Vw += par.beta * EVw_plus
-            Vm += par.beta * EVm_plus
-
-        # Return
-        Val = power * Vw + (1.0 - power) * Vm
-        return Val, Cw_priv, Cm_priv, C_pub, Hw, Hm, Vw, Vm
 
 
     def solve_remain_couple(self,t,assets,Kw,Km,iL,iP,power,Vw_next,Vm_next,kids,starting_val = None, starting_val_hours = None):
@@ -819,8 +678,8 @@ class HouseholdModelClass(EconModelClass):
             obj = lambda x: - self.value_of_choice_couple(x[0],x[1],t,assets,Kw, Km,iL,iP,power,Vw_next,Vm_next,kids)[0]
             #x0 = np.array([0.4, 0.4]) if starting_val is None else starting_val #initial guess [C_tot, H_tot]
             # Initial guess
-            print(f"starting_val: {starting_val}, starting_val_hours: {starting_val_hours}")
-            print(f"type of starting_val: {type(starting_val)}, type of starting_val_hours: {type(starting_val_hours)}")
+            #print(f"starting_val: {starting_val}, starting_val_hours: {starting_val_hours}")
+            #print(f"type of starting_val: {type(starting_val)}, type of starting_val_hours: {type(starting_val_hours)}")
             # Initial guess
             if starting_val is None:
                 C_tot_guess = 0.4
