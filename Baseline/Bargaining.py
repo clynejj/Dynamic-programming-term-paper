@@ -379,6 +379,7 @@ class HouseholdModelClass(EconModelClass):
         
         # current utility from consumption allocation
         Cw_priv, Cm_priv, C_pub = intraperiod_allocation(C_tot,iP,sol,par)
+        print(f"Cw_priv: {Cw_priv}, Cm_priv: {Cm_priv}, C_pub: {C_pub}")
         Vw = usr.util(Cw_priv,C_pub,woman,par,love)
         Vm = usr.util(Cm_priv,C_pub,man,par,love)
 
@@ -387,9 +388,12 @@ class HouseholdModelClass(EconModelClass):
             # savings_vec = np.ones(par.num_shock_love)
             sol.savings_vec[:] = M_resources - C_tot #np.repeat(M_resources - C_tot,par.num_shock_love) np.tile(M_resources - C_tot,(par.num_shock_love,)) 
             love_next_vec = love + par.grid_shock_love
-
+            print(f"love_next_vec: {love_next_vec}, shape: {np.shape(love_next_vec)}, type: {type(love_next_vec)}")
+            print(f"sol.savings_vec: {sol.savings_vec}, shape: {np.shape(sol.savings_vec)}, type: {type(sol.savings_vec)}")
+            print(f"Vw_next: {Vw_next}, shape Vw_next: {np.shape(Vw_next)}, type: {type(Vw_next)}")
             linear_interp.interp_2d_vec(par.grid_love,par.grid_A , Vw_next, love_next_vec,sol.savings_vec,sol.Vw_plus_vec)
             linear_interp.interp_2d_vec(par.grid_love,par.grid_A , Vm_next, love_next_vec,sol.savings_vec,sol.Vm_plus_vec)
+            print(f"sol.Vw_plus_vec: {sol.Vw_plus_vec}, shape: {np.shape(sol.Vw_plus_vec)}, type: {type(sol.Vw_plus_vec)}")
             EVw_plus = sol.Vw_plus_vec @ par.grid_weight_love
             EVm_plus = sol.Vm_plus_vec @ par.grid_weight_love
 
@@ -661,8 +665,8 @@ def check_participation_constraints(power_idx,power,Sw,Sm,idx_single,idx_couple,
                 else: # divorce
 
                     for i,key in enumerate(list_couple):
-                        print(f"list_single[{i}].shape: {np.shape(list_single[i])}, idx_single: {idx_single}, idx: {idx}")
-                        print(f"list_couple[{i}].shape: {np.shape(list_couple[i])}, idx_couple(Low_w): {idx_couple(Low_w)}")
+                        #print(f"list_single[{i}].shape: {np.shape(list_single[i])}, idx_single: {idx_single}, idx: {idx}")
+                        #print(f"list_couple[{i}].shape: {np.shape(list_couple[i])}, idx_couple(Low_w): {idx_couple(Low_w)}")
                         list_couple[i][idx] = list_single[i][idx_single]
 
                     power_idx[idx] = -1
