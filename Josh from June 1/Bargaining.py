@@ -119,7 +119,8 @@ class HouseholdModelClass(EconModelClass):
         #interest rate
         par.r = 0.03
 
-        # birth probability
+        # kids
+
         par.p_birth = 0.05
         
     def allocate(self):
@@ -212,22 +213,30 @@ class HouseholdModelClass(EconModelClass):
         sim.Cw_tot = np.nan + np.ones(shape_sim)
         sim.Cm_tot = np.nan + np.ones(shape_sim)
         sim.C_tot = np.nan + np.ones(shape_sim)
+        sim.Hw = np.nan + np.ones(shape_sim)
+        sim.Hm = np.nan + np.ones(shape_sim)
+        sim.H_tot = np.nan + np.ones(shape_sim)
         
         sim.A = np.nan + np.ones(shape_sim)
         sim.Aw = np.nan + np.ones(shape_sim)
         sim.Am = np.nan + np.ones(shape_sim)
         sim.kw = np.nan + np.ones(shape_sim)
         sim.km = np.nan + np.ones(shape_sim)
-        sim.nw = np.nan + np.ones(shape_sim)
-        sim.nm = np.nan + np.ones(shape_sim)
+       
         sim.couple = np.nan + np.ones(shape_sim)
         sim.power_idx = np.ones(shape_sim,dtype=np.int_)
         sim.power = np.nan + np.ones(shape_sim)
         sim.love = np.nan + np.ones(shape_sim)
+        sim.kids = np.zeros(shape_sim, dtype=np.int_)
 
         # shocks
         np.random.seed(par.seed)
         sim.draw_love = np.random.normal(size=shape_sim)
+
+        
+        #draws used to simulate child arrival
+        np.random.seed(9210)
+        sim.draws_uniform = np.random.uniform(size=shape_sim)
 
         # initial distribution
         sim.init_A = par.grid_A[0] + np.zeros(par.simN)
@@ -238,6 +247,7 @@ class HouseholdModelClass(EconModelClass):
         sim.init_couple = np.ones(par.simN,dtype=np.bool_)
         sim.init_power_idx = par.num_power//2 * np.ones(par.simN,dtype=np.int_)
         sim.init_love = np.zeros(par.simN)
+        sim.init_kids = np.zeros(par.simN, dtype=np.int_)
         
     def setup_grids(self):
         par = self.par
@@ -508,86 +518,6 @@ class HouseholdModelClass(EconModelClass):
         Val = power * Vw + (1.0 - power) * Vm
         return Val, Cw_priv, Cm_priv, C_pub, Hw, Hm, Vw, Vm
 
-
-
-    def value_of_choice_couple_overflow(self, C_tot, H_tot, t, assets, Kw, Km, iL, iP, power, Vw_next, Vm_next, kids):
-        sol = self.sol
-        par = self.par
-
-        love = par.grid_love[iL]
-        # Current utility from consumption allocation
-        Cw_priv, Cm_priv, C_pub = intraperiod_allocation(C_tot, iP, sol, par)
-        Hw, Hm = intraperiod_allocation_hours(H_tot, iP, sol, kids, par)
-        Vw = usr.util(Cw_priv, C_pub, Hw, woman, kids, par, love)
-        Vm = usr.util(Cm_priv, C_pub, Hm, man, kids, par, love)
-
-        # Add continuation value
-        if t < (par.T - 1):
-            # Calculate income based on work hours and human capital
-            income_woman = wage_func(self, Kw, woman) * Hw
-            income_man = wage_func(self, Km, man) * Hm
-            total_income = income_woman + income_man
-
-            # Ensure all next period variables are vectors of the same length
-            love_next_vec = love + par.grid_shock_love
-            num_shocks = love_next_vec.size
-
-            sol.a_next_vec[:] = assets + total_income - C_tot  # Next period's assets
-            sol.k_next_woman_vec[:] = Kw + Hw  # Next period's human capital for woman
-            sol.k_next_man_vec[:] = Km + Hm  # Next period's human capital for man
-
-            #print(f"type love_next_vec: {type(love_next_vec)}, love_next_vec: {love_next_vec}, shape love_next_vec: {np.shape(love_next_vec)}")
-            #print(f"type sol.a_next_vec: {type(sol.a_next_vec)}, sol.a_next_vec: {sol.a_next_vec}, shape sol.a_next_vec: {np.shape(sol.a_next_vec)}")
-            #print(f"type sol.k_next_woman_vec: {type(sol.k_next_woman_vec)}, sol.k_next_woman_vec: {sol.k_next_woman_vec}, shape sol.k_next_woman_vec: {np.shape(sol.k_next_woman_vec)}")
-            #print(f"type sol.k_next_man_vec: {type(sol.k_next_man_vec)}, sol.k_next_man_vec: {sol.k_next_man_vec}, shape sol.k_next_man_vec: {np.shape(sol.k_next_man_vec)}")
-            #print(f"Vw_next: {Vw_next}, shape Vw_next: {np.shape(Vw_next)}")
-            #print(f"Vm_next: {Vm_next}, shape Vm_next: {np.shape(Vm_next)}")
-
-            # Perform 5D interpolation
-            grid_n_float64 = par.grid_n.astype(np.float64)  # Cast to float64
-            for i in range(num_shocks):
-                sol.Vw_plus_vec[i] = linear_interp.interp_5d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid, grid_n_float64,
-                                                Vw_next, love_next_vec[i], sol.a_next_vec[i], sol.k_next_woman_vec[i], sol.k_next_man_vec[i], sol.n_next_vec[i])
-                sol.Vm_plus_vec[i] = linear_interp.interp_5d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid, grid_n_float64,
-                                                Vm_next, love_next_vec[i], sol.a_next_vec[i], sol.k_next_woman_vec[i], sol.k_next_man_vec[i], sol.n_next_vec[i])
-
-            EVw_plus_no_birth = sol.Vw_plus_vec @ par.grid_weight_love
-            EVm_plus_no_birth = sol.Vm_plus_vec @ par.grid_weight_love
-
-            # Child-birth considerations
-            if kids >= (par.num_n - 1):
-                # Cannot have more children
-                EVw_plus_birth = EVw_plus_no_birth
-                EVm_plus_birth = EVm_plus_no_birth
-            else:
-                kids_next = kids + 1
-
-                # Interpolate future values for the next period with a new child
-                Vw_next_with_birth = sol.Vw_couple[t + 1, kids_next]
-                Vm_next_with_birth = sol.Vm_couple[t + 1, kids_next]
-
-                for i in range(num_shocks):
-                    sol.Vw_plus_vec[i] = linear_interp.interp_5d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid, grid_n_float64,
-                                                    Vw_next_with_birth, love_next_vec[i], sol.a_next_vec[i], sol.k_next_woman_vec[i], sol.k_next_man_vec[i], sol.n_next_vec[i])
-                    sol.Vm_plus_vec[i] = linear_interp.interp_5d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid, grid_n_float64,
-                                                    Vm_next_with_birth, love_next_vec[i], sol.a_next_vec[i], sol.k_next_woman_vec[i], sol.k_next_man_vec[i], sol.n_next_vec[i])
-
-                EVw_plus_birth = sol.Vw_plus_vec @ par.grid_weight_love
-                EVm_plus_birth = sol.Vm_plus_vec @ par.grid_weight_love
-
-            EVw_plus = par.p_birth * EVw_plus_birth + (1 - par.p_birth) * EVw_plus_no_birth
-            EVm_plus = par.p_birth * EVm_plus_birth + (1 - par.p_birth) * EVm_plus_no_birth
-
-            Vw += par.beta * EVw_plus
-            Vm += par.beta * EVm_plus
-
-        # Return
-        Val = power * Vw + (1.0 - power) * Vm
-        return Val, Cw_priv, Cm_priv, C_pub, Hw, Hm, Vw, Vm
-
-
-
-    
     
     def solve_couple(self, t):
         par = self.par
@@ -739,7 +669,7 @@ class HouseholdModelClass(EconModelClass):
             kids_next = kids
             V_next = sol.Vw_single[t + 1, kids_next]
             
-            V_next_no_birth = interp_2d(par.grid_Aw,par.Kw_grid,V_next,a_next,k_next)
+            V_next_no_birth = interp_2d(par.grid_Aw,par.kw_grid,V_next,a_next,k_next)
             
             # birth
             if (kids>=(par.num_n-1)):
@@ -748,7 +678,7 @@ class HouseholdModelClass(EconModelClass):
             else:
                 kids_next = kids + 1
                 V_next = sol.Vw_single[t + 1, kids_next]
-                V_next_birth = interp_2d(par.grid_Aw,par.Kw_grid,V_next,a_next,k_next)
+                V_next_birth = interp_2d(par.grid_Aw,par.kw_grid,V_next,a_next,k_next)
             
         else:
             kids_next = kids
@@ -767,7 +697,6 @@ class HouseholdModelClass(EconModelClass):
         
         # e. return value of choice (including penalty)
         return util + par.beta*EV_next + penalty
-        
 
     def simulate(self):
         sol = self.sol
@@ -777,127 +706,319 @@ class HouseholdModelClass(EconModelClass):
         for i in range(par.simN):
             for t in range(par.simT):
 
-                # state variables
-                if t==0:
+                # State variables
+                if t == 0:
                     A_lag = sim.init_A[i]
-                    Aw_lag = sim.init_Aw[i]
-                    Am_lag = sim.init_Am[i]
-                    Kw_lag = sim.init_Kw[i]
-                    Km_lag = sim.init_Km[i]
-                    n_lag = sim.init_n[i]
+                    Kw_lag = sim.init_kw[i]
+                    Km_lag = sim.init_km[i]
                     couple_lag = sim.init_couple[i]
                     power_idx_lag = sim.init_power_idx[i]
-                    love = sim.love[i,t] = sim.init_love[i]
+                    love = sim.love[i, t] = sim.init_love[i]
+                    kids = sim.init_kids[i]
 
                 else:
-                    A_lag = sim.A[i,t-1]
-                    Aw_lag = sim.Aw[i,t-1]
-                    Am_lag = sim.Am[i,t-1]
-                    Kw_lag = sim.Kw[i,t-1]
-                    Km_lag = sim.Km[i,t-1]
-                    couple_lag = sim.couple[i,t-1]
-                    power_idx_lag = sim.power_idx[i,t-1]
-                    love = sim.love[i,t]
-                
+                    A_lag = sim.A[i, t - 1]
+                    Kw_lag = sim.kw[i, t - 1]
+                    Km_lag = sim.km[i, t - 1]
+                    couple_lag = sim.couple[i, t - 1]
+                    power_idx_lag = sim.power_idx[i, t - 1]
+                    love = sim.love[i, t]
+                    kids = sim.kids[i, t - 1]
+
                 power_lag = par.grid_power[power_idx_lag]
 
-                # first check if they want to remain together and what the bargaining power will be if they do.
-                if couple_lag:                   
+                # Check if the couple wants to remain together and what the bargaining power will be if they do
+                if couple_lag:
 
-                    # value of transitioning into singlehood
-                    Vw_single = interp_1d(par.grid_Aw,sol.Vw_trans_single[t],Aw_lag)
-                    Vm_single = interp_1d(par.grid_Am,sol.Vm_trans_single[t],Am_lag)
+                    # Value of transitioning into singlehood
+                    Vw_trans_single_slice = sol.Vw_trans_single[t, kids]
+                    Vm_trans_single_slice = sol.Vm_trans_single[t, kids]
+                    Vw_single = linear_interp.interp_2d(par.grid_A, par.kw_grid, Vw_trans_single_slice, A_lag, Kw_lag)
+                    Vm_single = linear_interp.interp_2d(par.grid_A, par.km_grid, Vm_trans_single_slice, A_lag, Km_lag)
 
-                    idx = (t,power_idx_lag)
-                    Vw_couple_i = linear_interp.interp_2d(par.grid_love,par.grid_A,sol.Vw_remain_couple[idx],love,A_lag)
-                    Vm_couple_i = linear_interp.interp_2d(par.grid_love,par.grid_A,sol.Vm_remain_couple[idx],love,A_lag)
+                    idx = (t, power_idx_lag, kids)
+                    Vw_remain_couple_slice = sol.Vw_remain_couple[idx]
+                    Vm_remain_couple_slice = sol.Vm_remain_couple[idx]
+                    
+                    Vw_couple_i = linear_interp.interp_4d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid,
+                                                        Vw_remain_couple_slice, love, A_lag, Kw_lag, Km_lag)
+                    Vm_couple_i = linear_interp.interp_4d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid,
+                                                        Vm_remain_couple_slice, love, A_lag, Kw_lag, Km_lag)
 
-                    if ((Vw_couple_i>=Vw_single) & (Vm_couple_i>=Vm_single)):
+                    if (Vw_couple_i >= Vw_single) & (Vm_couple_i >= Vm_single):
                         power_idx = power_idx_lag
-
                     else:
-                        # value of partnerhip for all levels of power
+                        # Value of partnership for all levels of power
                         Vw_couple = np.zeros(par.num_power)
                         Vm_couple = np.zeros(par.num_power)
                         for iP in range(par.num_power):
-                            idx = (t,iP)
-                            Vw_couple[iP] = linear_interp.interp_2d(par.grid_love,par.grid_A,sol.Vw_remain_couple[idx],love,A_lag)
-                            Vm_couple[iP] = linear_interp.interp_2d(par.grid_love,par.grid_A,sol.Vm_remain_couple[idx],love,A_lag)
+                            idx = (t, iP, kids)
+                            Vw_remain_couple_slice = sol.Vw_remain_couple[idx]
+                            Vm_remain_couple_slice = sol.Vm_remain_couple[idx]
+                            
+                            Vw_couple[iP] = linear_interp.interp_4d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid,
+                                                                    Vw_remain_couple_slice, love, A_lag, Kw_lag, Km_lag)
+                            Vm_couple[iP] = linear_interp.interp_4d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid,
+                                                                    Vm_remain_couple_slice, love, A_lag, Kw_lag, Km_lag)
 
-                        # check participation constraint
+                        # Check participation constraint
                         Sw = Vw_couple - Vw_single
                         Sm = Vm_couple - Vm_single
-                        power_idx = update_bargaining_index(Sw,Sm,power_idx_lag, par)
+                        power_idx = update_bargaining_index(Sw, Sm, power_idx_lag, par)
 
-                    # infer partnership status
-                    if power_idx < 0.0: # divorce is coded as -1
-                        sim.couple[i,t] = False
-
+                    # Infer partnership status
+                    if power_idx < 0.0:  # Divorce is coded as -1
+                        sim.couple[i, t] = False
                     else:
-                        sim.couple[i,t] = True
+                        sim.couple[i, t] = True
 
-                else: # remain single
+                else:  # Remain single
+                    sim.couple[i, t] = False
 
-                    sim.couple[i,t] = False
+                # Update behavior
+                if sim.couple[i, t]:
 
-                # update behavior
-                if sim.couple[i,t]:
-                    
-                    # optimal consumption allocation if couple
-                    sol_C_tot = sol.C_tot_couple[t,power_idx] 
-                    C_tot = linear_interp.interp_2d(par.grid_love,par.grid_A,sol_C_tot,love,A_lag)
+                    # Optimal consumption allocation if couple
+                    sol_C_tot_slice = sol.C_tot_couple[t, power_idx, :, :, kids]  # Slicing to 4D
+                    C_tot = linear_interp.interp_4d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid,
+                                                    sol_C_tot_slice, love, A_lag, Kw_lag, Km_lag)
 
-                    sim.Cw_priv[i,t], sim.Cm_priv[i,t], C_pub = intraperiod_allocation(C_tot,power_idx,sol,par) #check this!
-                    sim.Cw_pub[i,t] = C_pub
-                    sim.Cm_pub[i,t] = C_pub
+                    sim.Cw_priv[i, t], sim.Cm_priv[i, t], C_pub = intraperiod_allocation(C_tot, power_idx, sol, par)
+                    sim.Cw_pub[i, t] = C_pub
+                    sim.Cm_pub[i, t] = C_pub
 
-                    # update end-of-period states
-                    M_resources = usr.resources_couple(A_lag,par) 
-                    sim.A[i,t] = M_resources - sim.Cw_priv[i,t] - sim.Cm_priv[i,t] - sim.Cw_pub[i,t]
-                    if t<(par.simT-1):
-                        sim.love[i,t+1] = love + par.sigma_love*sim.draw_love[i,t+1]
+                    # Optimal labor allocation if couple
+                    sol_H_tot_slice = sol.H_tot_couple[t, power_idx, :, :, kids]  # Slicing to 4D
+                    H_tot = linear_interp.interp_4d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid,
+                                                    sol_H_tot_slice, love, A_lag, Kw_lag, Km_lag)
+                    Hw, Hm = intraperiod_allocation_hours(H_tot, power_idx, sol, kids, par)
+                    sim.Hw[i, t] = Hw
+                    sim.Hm[i, t] = Hm
 
-                    # in case of divorce
-                    sim.Aw[i,t] = par.div_A_share * sim.A[i,t]
-                    sim.Am[i,t] = (1.0-par.div_A_share) * sim.A[i,t]
+                    # Update end-of-period states
+                    income_woman = Hw * wage_func(self, Kw_lag, woman)
+                    income_man = Hm * wage_func(self, Km_lag, man)
+                    M_resources = A_lag + income_woman + income_man
 
-                    sim.power_idx[i,t] = power_idx
-                    sim.power[i,t] = par.grid_power[sim.power_idx[i,t]]
+                    sim.Aw[i, t] = M_resources - sim.Cw_priv[i, t] - sim.Cm_priv[i, t] - sim.Cw_pub[i, t]
+                    if t < (par.simT - 1):
+                        sim.love[i, t + 1] = love + par.sigma_love * sim.draw_love[i, t + 1]
 
-                else: # single
+                    # In case of divorce
+                    sim.A[i, t] = par.div_A_share * sim.A[i, t]
+                    sim.power_idx[i, t] = power_idx
+                    sim.power[i, t] = par.grid_power[sim.power_idx[i, t]]
 
-                    # pick relevant solution for single, depending on whether just became single
+                    # Update human capital
+                    sim.kw[i, t] = Kw_lag + Hw
+                    sim.km[i, t] = Km_lag + Hm
+
+                else:  # Single
+
+                    sim.couple[i, t] = False
+
+                    # Pick relevant solution for single, depending on whether just became single
                     idx_sol_single = t
-                    sol_single_w = sol.Cw_tot_trans_single[idx_sol_single]
-                    sol_single_m = sol.Cm_tot_trans_single[idx_sol_single]
-                    if (power_idx_lag<0):
+                    sol_single_w = sol.C_tot_trans_single[idx_sol_single]
+                    sol_single_m = sol.C_tot_trans_single[idx_sol_single]
+                    if power_idx_lag < 0:
                         sol_single_w = sol.Cw_tot_single[idx_sol_single]
                         sol_single_m = sol.Cm_tot_single[idx_sol_single]
 
-                    # optimal consumption allocations
-                    Cw_tot = linear_interp.interp_1d(par.grid_Aw,sol_single_w,Aw_lag)
-                    Cm_tot = linear_interp.interp_1d(par.grid_Am,sol_single_m,Am_lag)
+                    # Optimal consumption allocations
+                    Cw_tot = linear_interp.interp_2d(par.grid_A, par.kw_grid, sol_single_w, A_lag, Kw_lag)
+                    Cm_tot = linear_interp.interp_2d(par.grid_A, par.km_grid, sol_single_m, A_lag, Km_lag)
+
+                    sim.Cw_priv[i, t], sim.Cw_pub[i, t] = intraperiod_allocation_single(Cw_tot, par)
+                    sim.Cm_priv[i, t], sim.Cm_pub[i, t] = intraperiod_allocation_single(Cm_tot, par)
+
+                    # Optimal labor allocation for single
+                    sol_Hw_single_slice = sol.Hw_single[t, kids]
+                    Hw = linear_interp.interp_2d(par.grid_A, par.kw_grid, sol_Hw_single_slice, A_lag, Kw_lag)
+                    sim.Hw[i, t] = Hw
+
+                    sol_Hm_single_slice = sol.Hm_single[t, kids]
+                    Hm = linear_interp.interp_2d(par.grid_A, par.km_grid, sol_Hm_single_slice, A_lag, Km_lag)
+                    sim.Hm[i, t] = Hm
+
+                    # Update end-of-period states
+                    income_woman = Hw * wage_func(self, Kw_lag, woman)
+                    income_man = Hm * wage_func(self, Km_lag, man)
+                    Mw = A_lag + income_woman
+                    Mm = A_lag + income_man
+
+                    sim.A[i, t] = Mw - sim.Cw_priv[i, t] - sim.Cw_pub[i, t]
+                    sim.A[i, t] = Mm - sim.Cm_priv[i, t] - sim.Cm_pub[i, t]
+
+                    # Update human capital
+                    sim.kw[i, t] = Kw_lag + Hw
+                    sim.km[i, t] = Km_lag + Hm
+
+                    # Not updated: nans
+                    sim.power_idx[i, t] = -1
+
+                # Total consumption
+                sim.Cw_tot = sim.Cw_priv + sim.Cw_pub
+                sim.Cm_tot = sim.Cm_priv + sim.Cm_pub
+                sim.C_tot = sim.Cw_priv + sim.Cm_priv + sim.Cw_pub
+                # Childbirth
+                if t < par.simT - 1:
+                    birth = 0
+                    if ((sim.draws_uniform[i, t] <= par.p_birth) & (sim.kids[i, t] < (par.num_n - 1))):
+                        birth = 1
+                    sim.kids[i, t + 1] = sim.kids[i, t] + birth
+                
+   
+    def simulate_exog_income(self):
+        sol = self.sol
+        sim = self.sim
+        par = self.par
+
+        for i in range(par.simN):
+            for t in range(par.simT):
+
+                # State variables
+                if t == 0:
+                    A_lag = sim.init_A[i]
+                    Kw_lag = sim.init_kw[i]
+                    Km_lag = sim.init_km[i]
+                    couple_lag = sim.init_couple[i]
+                    power_idx_lag = sim.init_power_idx[i]
+                    love = sim.love[i, t] = sim.init_love[i]
+                    kids = sim.init_kids[i]
+
+                else:
+                    A_lag = sim.A[i, t - 1]
+                    Kw_lag = sim.kw[i, t - 1]
+                    Km_lag = sim.km[i, t - 1]
+                    couple_lag = sim.couple[i, t - 1]
+                    power_idx_lag = sim.power_idx[i, t - 1]
+                    love = sim.love[i, t]
+                    kids = sim.kids[i, t - 1]
+
+                power_lag = par.grid_power[power_idx_lag]
+
+                # Check if the couple wants to remain together and what the bargaining power will be if they do
+                if couple_lag:
+
+                    # Value of transitioning into singlehood
+                    Vw_trans_single_slice = sol.Vw_trans_single[t, kids]
+                    Vm_trans_single_slice = sol.Vm_trans_single[t, kids]
+                    Vw_single = linear_interp.interp_2d(par.grid_A, par.kw_grid, Vw_trans_single_slice, A_lag, Kw_lag)
+                    Vm_single = linear_interp.interp_2d(par.grid_A, par.km_grid, Vm_trans_single_slice, A_lag, Km_lag)
+
+                    idx = (t, power_idx_lag, kids)
+                    Vw_remain_couple_slice = sol.Vw_remain_couple[idx]
+                    Vm_remain_couple_slice = sol.Vm_remain_couple[idx]
                     
-                    sim.Cw_priv[i,t],sim.Cw_pub[i,t] = intraperiod_allocation_single(Cw_tot,woman,par)
-                    sim.Cm_priv[i,t],sim.Cm_pub[i,t] = intraperiod_allocation_single(Cm_tot,man,par)
+                    Vw_couple_i = linear_interp.interp_4d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid,
+                                                        Vw_remain_couple_slice, love, A_lag, Kw_lag, Km_lag)
+                    Vm_couple_i = linear_interp.interp_4d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid,
+                                                        Vm_remain_couple_slice, love, A_lag, Kw_lag, Km_lag)
 
-                    # update end-of-period states
-                    Mw = usr.resources_single(Aw_lag,woman,par)
-                    Mm = usr.resources_single(Am_lag,man,par) 
-                    sim.Aw[i,t] = Mw - sim.Cw_priv[i,t] - sim.Cw_pub[i,t]
-                    sim.Am[i,t] = Mm - sim.Cm_priv[i,t] - sim.Cm_pub[i,t]
+                    if (Vw_couple_i >= Vw_single) & (Vm_couple_i >= Vm_single):
+                        power_idx = power_idx_lag
+                    else:
+                        # Value of partnership for all levels of power
+                        Vw_couple = np.zeros(par.num_power)
+                        Vm_couple = np.zeros(par.num_power)
+                        for iP in range(par.num_power):
+                            idx = (t, iP, kids)
+                            Vw_remain_couple_slice = sol.Vw_remain_couple[idx]
+                            Vm_remain_couple_slice = sol.Vm_remain_couple[idx]
+                            
+                            Vw_couple[iP] = linear_interp.interp_4d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid,
+                                                                    Vw_remain_couple_slice, love, A_lag, Kw_lag, Km_lag)
+                            Vm_couple[iP] = linear_interp.interp_4d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid,
+                                                                    Vm_remain_couple_slice, love, A_lag, Kw_lag, Km_lag)
 
-                    # not updated: nans
-                    # sim.power[i,t] = np.nan
-                    # sim.love[i,t+1] = np.nan 
-                    # sim.A[i,t] = np.nan
+                        # Check participation constraint
+                        Sw = Vw_couple - Vw_single
+                        Sm = Vm_couple - Vm_single
+                        power_idx = update_bargaining_index(Sw, Sm, power_idx_lag, par)
 
-                    sim.power_idx[i,t] = -1
+                    # Infer partnership status
+                    if power_idx < 0.0:  # Divorce is coded as -1
+                        sim.couple[i, t] = False
+                    else:
+                        sim.couple[i, t] = True
 
-        # total consumption
-        sim.Cw_tot = sim.Cw_priv + sim.Cw_pub
-        sim.Cm_tot = sim.Cm_priv + sim.Cm_pub
-        sim.C_tot = sim.Cw_priv + sim.Cm_priv + sim.Cw_pub
+                else:  # Remain single
+                    sim.couple[i, t] = False
+
+                # Update behavior
+                if sim.couple[i, t]:
+
+                    # Optimal consumption allocation if couple
+                    sol_C_tot_slice = sol.C_tot_couple[t, power_idx, :, :, kids]  # Slicing to 4D
+                    C_tot = linear_interp.interp_4d(par.grid_love, par.grid_A, par.kw_grid, par.km_grid,
+                                                    sol_C_tot_slice, love, A_lag, Kw_lag, Km_lag)
+
+                    sim.Cw_priv[i, t], sim.Cm_priv[i, t], C_pub = intraperiod_allocation(C_tot, power_idx, sol, par)
+                    sim.Cw_pub[i,t] = C_pub
+                    sim.Cm_pub[i,t] = C_pub
+
+                    # Update end-of-period states
+                    M_resources = A_lag + sim.Hw[i, t]*self.wage_func(self, sim.kw, woman) + sim.Hm[i, t]*self.wage_func(self, sim.km, man)
+                    sim.A[i, t] = M_resources - sim.Cw_priv[i, t] - sim.Cm_priv[i, t] - sim.C_pub[i, t]
+                    if t < (par.simT - 1):
+                        sim.love[i, t + 1] = love + par.sigma_love * sim.draw_love[i, t + 1]
+
+                    # In case of divorce
+                    sim.A[i, t] = par.div_A_share * sim.A[i, t]
+                    sim.power_idx[i, t] = power_idx
+                    sim.power[i, t] = par.grid_power[sim.power_idx[i, t]]
+
+                    # Update human capital
+                    sim.kw[i, t] = Kw_lag + sim.Hw[i, t]
+                    sim.km[i, t] = Km_lag + sim.Hm[i, t]
+
+                else:  # Single
+
+                    sim.couple[i, t] = False
+
+                    # Pick relevant solution for single, depending on whether just became single
+                    idx_sol_single = t
+                    sol_single_w = sol.C_tot_trans_single[idx_sol_single]
+                    sol_single_m = sol.C_tot_trans_single[idx_sol_single]
+                    if power_idx_lag < 0:
+                        sol_single_w = sol.Cw_tot_single[idx_sol_single]
+                        sol_single_m = sol.Cm_tot_single[idx_sol_single]
+
+                    # Optimal consumption allocations
+                    Cw_tot = linear_interp.interp_2d(par.grid_A, par.kw_grid, sol_single_w, A_lag, Kw_lag)
+                    Cm_tot = linear_interp.interp_2d(par.grid_A, par.km_grid, sol_single_m, A_lag, Km_lag)
+
+                    sim.Cw_priv[i, t], sim.Cw_pub[i, t] = intraperiod_allocation_single(Cw_tot, par)
+                    sim.Cm_priv[i, t], sim.Cm_pub[i, t] = intraperiod_allocation_single(Cm_tot, par)
+
+                    # Update end-of-period states
+                    Mw = usr.resources_single(A_lag, Kw_lag, par)
+                    Mm = usr.resources_single(A_lag, Km_lag, par)
+                    sim.A[i, t] = Mw - sim.Cw_priv[i, t] - sim.Cw_pub[i, t]
+                    sim.A[i, t] = Mm - sim.Cm_priv[i, t] - sim.Cm_pub[i, t]
+
+                    # Update human capital
+                    sim.kw[i, t] = Kw_lag
+                    sim.km[i, t] = Km_lag
+
+                    # Not updated: nans
+                    sim.power_idx[i, t] = -1
+
+                # Total consumption
+                sim.Cw_tot = sim.Cw_priv + sim.Cw_pub
+                sim.Cm_tot = sim.Cm_priv + sim.Cm_pub
+                sim.C_tot = sim.Cw_priv + sim.Cm_priv + sim.C_pub
+
+                # Childbirth
+                birth = 0
+                if ((sim.draws_uniform[i, t] <= par.p_birth) & (sim.kids[i, t] < (par.num_n - 1))):
+                    birth = 1
+                sim.kids[i, t + 1] = sim.kids[i, t] + birth
+
+        
+
+
 
 
 ############
