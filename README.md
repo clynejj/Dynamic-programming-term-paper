@@ -1,2 +1,2 @@
 This is the repository for our group project for DP. 'Baseline' is taken from lecture 8 in household behaviour over the lifecycle. 
-Please avoid editting files that have a person's name on them... 
+The singles problem is found in the subfolder named 'singles subset problem'. 
